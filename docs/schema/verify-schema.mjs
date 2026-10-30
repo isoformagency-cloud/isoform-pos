@@ -39,7 +39,7 @@ async function setup() {
     const tax = id(`tax${tenant}`)
     const owner = id(`owner${tenant}`)
     const cashier = id(`cashier${tenant}`)
-    await db.query(`insert into app.tenants (id, display_name, status) values ($1, $2, 'active')`, [t, `Tenant ${tenant}`])
+    await db.query(`insert into app.tenants (id, display_name, status, allow_self_verification) values ($1, $2, 'active', false)`, [t, `Tenant ${tenant}`])
     await db.query(
       `insert into app.tax_registrations (id, tenant_id, legal_name, gstin, state_code, scheme, address)
        values ($1, $2, 'Legal', '33ABCDE1234F1Z5', '33', 'regular', 'Address')`,

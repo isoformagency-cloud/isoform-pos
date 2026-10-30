@@ -66,16 +66,24 @@ export function Payments({ me }: { me: Me }) {
     })
   }
 
+  async function confirmAll() {
+    const ids = (list.data?.items ?? []).map((item: any) => item.id)
+    if (await ask(`Confirm these ${ids.length} payments?`, [], 'Confirm all')) act.mutate({ path: '/payments/confirm-all', body: { ids } })
+  }
+
   const payment = detail.data
 
   return (
     <>
       {node}
-      <PageHeader title="Payments" text="Recorded means someone entered it. Confirmed means someone checked it arrived." />
+      <PageHeader title="Payments" text="Recorded means it was entered. Confirmed means someone checked it arrived." />
       <div className="mb-4 flex gap-2">
         {FILTERS.map(([value, label]) => (
           <button key={label} className={`btn !min-h-10 ${filter === value ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setFilter(value); setOpenId(null) }}>{label}</button>
         ))}
+        {canVerify && filter === 'recorded' && list.data?.items.length > 1 && (
+          <button className="btn btn-secondary !min-h-10 ml-auto" disabled={act.isPending} onClick={confirmAll}>Confirm all</button>
+        )}
       </div>
       {act.error && <div className="mb-3"><Notice>{act.error.message}</Notice></div>}
       <Loading

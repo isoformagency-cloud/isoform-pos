@@ -166,11 +166,29 @@ describe('verification', () => {
     const paid = await pay(await invoice(), 'upi', '1000')
     expect((await call('POST', `/payments/${paid.body.id}/confirm`, cashier)).status).toBe(403)
   })
-  it('stops people confirming their own payment', async () => {
+  it('lets a manager confirm their own payment by default', async () => {
+    const paid = await pay(await invoice(manager), 'upi', '1000', {}, manager)
+    expect((await call('POST', `/payments/${paid.body.id}/confirm`, manager)).body.status).toBe('confirmed')
+  })
+  it('requires a second person only when the business turns that on', async () => {
+    await call('PATCH', '/business', owner, { allowSelfVerification: false })
     const paid = await pay(await invoice(manager), 'upi', '1000', {}, manager)
     const result = await call('POST', `/payments/${paid.body.id}/confirm`, manager)
     expect(result.status).toBe(403)
     expect(result.body.code).toBe('needs_second_person')
+    const batch = await call('POST', '/payments/confirm-all', manager, { ids: [paid.body.id] })
+    expect(batch.body).toEqual({ confirmed: 0, skipped: 1 })
+    await call('PATCH', '/business', owner, { allowSelfVerification: true })
+  })
+  it('confirms a whole list at once and skips what is already done', async () => {
+    const first = await pay(await invoice(), 'upi', '1000')
+    const second = await pay(await invoice(), 'card', '1000')
+    const voided = await pay(await invoice(), 'upi', '1000')
+    await call('POST', `/payments/${voided.body.id}/void`, manager, { reason: 'Mistake' })
+    const batch = await call('POST', '/payments/confirm-all', manager, { ids: [first.body.id, second.body.id, voided.body.id] })
+    expect(batch.body).toEqual({ confirmed: 2, skipped: 1 })
+    expect((await call('GET', `/payments/${second.body.id}`, owner)).body.history[0].changed_by).toBe('Manager')
+    expect((await call('POST', '/payments/confirm-all', cashier, { ids: [first.body.id] })).status).toBe(403)
   })
   it('records who confirmed and when', async () => {
     const paid = await pay(await invoice(), 'upi', '1000')
@@ -279,12 +297,13 @@ describe('cash drawer', () => {
     const reviewed = await call('POST', `/cash-sessions/${session}/review`, manager, { note: 'Short ₹20, spoke to cashier' })
     expect(reviewed.body).toMatchObject({ status: 'reviewed', variance: '-20.00' })
   })
-  it('stops the person who closed from reviewing', async () => {
+  it('stops the closer reviewing only when a second person is required', async () => {
+    await call('PATCH', '/business', owner, { allowSelfVerification: false })
     const session = (await openDrawer('100', manager)).body.id
     await closeDrawer(session, '100', manager)
-    const result = await call('POST', `/cash-sessions/${session}/review`, manager, { note: 'Fine' })
-    expect(result.status).toBe(409)
-    await call('POST', `/cash-sessions/${session}/review`, owner, { note: 'Fine' })
+    expect((await call('POST', `/cash-sessions/${session}/review`, manager, { note: 'Fine' })).status).toBe(409)
+    await call('PATCH', '/business', owner, { allowSelfVerification: true })
+    expect((await call('POST', `/cash-sessions/${session}/review`, manager, { note: 'Fine' })).status).toBe(200)
   })
   it('stops a waiter using the drawer', async () => {
     expect((await openDrawer('1', waiter)).status).toBe(403)

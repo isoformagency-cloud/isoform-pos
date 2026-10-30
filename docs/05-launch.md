@@ -114,3 +114,11 @@ It prints a private link for the owner to set a password. The owner then adds ta
 - **Request limits:** 30 PIN or device requests a minute per address, 5 demo requests an hour. Supabase limits password attempts itself.
 - **Database:** connections verify Supabase's certificate. The root is pinned in `apps/api/src/platform/database-ca.ts` and expires on 26 April 2031, so it must be replaced before then.
 - **Requests:** 64 KB size limit, and security headers on every response.
+
+## Live check, 30 October 2026
+
+POS and API deployed at isoform-pos-app.vercel.app, website at isoform-pos.vercel.app, both in Mumbai. Run `npx tsx --env-file=../../.env.local scripts/check-live.ts <address> <demo owner email>` from apps/api.
+
+Passed live: session refusal, sign-in through the API, order, tax quote, bill, payment, report, device registration, PIN login, wrong PIN refusal, cashier blocked from reports, and request limits.
+
+Speed from the owner's PC: network 96 ms, adding an item 151 ms typical, issuing a bill 207 ms, recording a payment 425 ms. Occasional requests took 4 to 8 seconds. The cause is unconfirmed; opening new database connections is the likely reason.

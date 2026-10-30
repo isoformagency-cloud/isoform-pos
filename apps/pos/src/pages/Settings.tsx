@@ -20,7 +20,7 @@ export function Settings() {
       displayName: form.get('displayName'),
       roundingRule: form.get('roundingRule'),
       pricesIncludeTax: form.get('pricesIncludeTax') === 'on',
-      allowSelfVerification: form.get('allowSelfVerification') === 'on',
+      allowSelfVerification: form.get('requireSecondPerson') !== 'on',
     })
   }
 
@@ -43,8 +43,8 @@ export function Settings() {
               Menu prices include tax
             </label>
             <label className="flex min-h-11 items-center gap-2 text-sm">
-              <input type="checkbox" name="allowSelfVerification" defaultChecked={business.data?.allow_self_verification} />
-              Let one person record and confirm payments (for very small teams)
+              <input type="checkbox" name="requireSecondPerson" defaultChecked={!business.data?.allow_self_verification} />
+              Require a second person to confirm payments and review cash
             </label>
           </fieldset>
           {save.error && <Notice>{save.error.message}</Notice>}
