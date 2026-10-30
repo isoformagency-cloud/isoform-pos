@@ -1,8 +1,16 @@
 // Tests the draft schema on a real Supabase project with simultaneous connections.
 // It installs the schema, runs the tests, then removes everything it created.
-// Only run against an empty project: node --env-file=.env.local docs/schema/verify-concurrency.mjs
-import { readFileSync } from 'node:fs'
+// Only for a spare, empty project. It refuses to run once migrations have been applied.
+import { readdirSync, readFileSync } from 'node:fs'
 import pg from 'pg'
+
+const migrations = new URL('../../supabase/migrations/', import.meta.url)
+const schemaSql = () =>
+  readdirSync(migrations)
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
+    .map((file) => readFileSync(new URL(file, migrations), 'utf8'))
+    .join('\n')
 
 const ssl = { rejectUnauthorized: false }
 const admin = new pg.Client({ connectionString: process.env.DATABASE_URL_DIRECT, ssl })
@@ -279,6 +287,7 @@ async function speed(t) {
 
 async function teardown() {
   await admin.query(`drop schema if exists app cascade`)
+  await admin.query(`drop role if exists isoform_api`)
   await admin.query(`drop role if exists app_user`)
   if (users.length) await admin.query(`delete from auth.users where id = any($1::uuid[])`, [users])
   const { rows: [left] } = await admin.query(
@@ -299,9 +308,7 @@ if (state.n) {
 
 let crashed = null
 try {
-  await admin.query(readFileSync(new URL('./first-release-draft.sql', import.meta.url), 'utf8'))
-  // Supabase's postgres role is not a superuser, so it must be allowed to act as app_user.
-  await admin.query(`grant app_user to postgres with set true`)
+  await admin.query(schemaSql())
   console.log('Schema installed on Supabase')
   const a = makeTenant()
   const b = makeTenant()

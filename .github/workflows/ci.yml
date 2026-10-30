@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Database rules
+        run: npm run verify:schema
+      - name: Website
+        run: npm run build:site && npm test
+      - name: API types
+        run: npx tsc --noEmit
+        working-directory: apps/api
+      - name: POS build
+        run: npm run build -w @isoform/pos
+        env:
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_ANON_KEY: not-a-real-key

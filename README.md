@@ -7,10 +7,10 @@ ISOFORM POS records payments. It does not process them.
 
 | Part | Status |
 |---|---|
-| `docs/` | Stages 1 and 2 approved, Stage 3 awaiting approval |
-| `docs/schema` | First-release schema draft and its checks (`npm run verify:schema`) |
+| `docs/` | Stages 1 to 3 approved |
+| `supabase/migrations` | Database schema, applied to Supabase. Checks: `npm run verify:schema` |
 | `apps/site` | Marketing site built, not deployed |
-| `apps/pos`, `apps/api` | Not started. Blocked until the database design is approved |
+| `apps/api`, `apps/pos` | Pilot core built and tested locally, not deployed. See [Stage 4](docs/04-foundation.md) |
 
 ## Marketing site
 
@@ -42,3 +42,4 @@ npm test
 - [Stage 1: Architecture discovery](docs/01-architecture-discovery.md)
 - [Stage 2: System architecture](docs/02-system-architecture.md)
 - [Stage 3: Database design](docs/03-database-design.md)
+- [Stage 4: Foundation](docs/04-foundation.md)

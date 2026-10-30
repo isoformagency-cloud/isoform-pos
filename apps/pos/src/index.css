@@ -1,0 +1,135 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter/index.css';
+@import '@fontsource-variable/inter-tight/index.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
+
+@theme {
+  --color-brand: #571bf3;
+  --color-brand-deep: #4c1cc0;
+  --color-brand-tint: #f5f2fe;
+  --color-ink: #16161f;
+  --color-ink-mid: #3f3f50;
+  --color-ink-soft: #57576a;
+  --color-paper-soft: #fafafb;
+  --color-line: #e2e2e8;
+  --color-ok: #0b7a4b;
+  --color-ok-tint: #e5f4ed;
+  --color-wait: #8f5200;
+  --color-wait-tint: #fbf0df;
+  --color-bad: #b7231a;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Inter Tight Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+}
+
+@layer base {
+  body {
+    background: white;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding-inline: 1rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-xl);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .btn-primary {
+    background: var(--color-ink);
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-brand);
+  }
+
+  .btn-secondary {
+    border-color: var(--color-line);
+    background: white;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--color-ink-soft);
+  }
+
+  .card {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-2xl);
+    background: white;
+  }
+
+  .field {
+    display: grid;
+    gap: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .field input,
+  .field select {
+    min-height: 2.75rem;
+    width: 100%;
+    padding-inline: 0.75rem;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    background: white;
+    font-size: 1rem;
+    font-weight: 400;
+  }
+}
+
+/* 80mm thermal receipts through the browser print dialog. */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .print-area {
+    max-width: none;
+    border: 0;
+    padding: 0;
+    color: black;
+    font-size: 11px;
+  }
+}

@@ -3,8 +3,16 @@
 //
 // PGlite has one connection, so this proves the rules, not behaviour under
 // simultaneous writers. Concurrency tests run against Postgres at Stage 4.
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
+
+const migrations = new URL('../../supabase/migrations/', import.meta.url)
+const schemaSql = () =>
+  readdirSync(migrations)
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
+    .map((file) => readFileSync(new URL(file, migrations), 'utf8'))
+    .join('\n')
 
 const db = new PGlite()
 const results = []
@@ -16,8 +24,15 @@ async function setup() {
   await db.exec(`
     create schema auth;
     create table auth.users (id uuid primary key);
+    create function auth.uid() returns uuid language sql as 'select null::uuid';
+    create role authenticated;
+    create role anon;
+    create role service_role;
+    create schema realtime;
+    create table realtime.messages (extension text);
+    create function realtime.topic() returns text language sql as 'select null::text';
   `)
-  await db.exec(readFileSync(process.env.SCHEMA_FILE ?? new URL('./first-release-draft.sql', import.meta.url), 'utf8'))
+  await db.exec(process.env.SCHEMA_FILE ? readFileSync(process.env.SCHEMA_FILE, 'utf8') : schemaSql())
 
   for (const tenant of ['A', 'B']) {
     const t = id(`tenant${tenant}`)
@@ -680,7 +695,7 @@ async function privileges() {
 
   const noTenant = await rows(`
     select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'app' and c.relkind = 'r' and c.relname <> 'tenants'
+    where n.nspname = 'app' and c.relkind = 'r' and c.relname not in ('tenants', 'rate_limits')
       and not exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'tenant_id' and not a.attisdropped)`)
   check(g, 'Every table carries a tenant', noTenant.length === 0, noTenant.map((r) => r.relname).join(', '))
 
