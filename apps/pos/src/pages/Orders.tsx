@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Minus, Plus, Trash2 } from 'lucide-react'
+import { Bike, Lock, Minus, Plus, ShoppingBag, Smartphone, Trash2, UtensilsCrossed, type LucideIcon } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
@@ -13,6 +13,14 @@ const TYPES = [
   ['delivery', 'Delivery'],
   ['aggregator', 'Delivery app'],
 ] as const
+
+// Colour and symbol together, so order types can be told apart without relying on colour alone.
+const TYPE_LOOK: Record<string, { icon: LucideIcon; tone: string }> = {
+  dine_in: { icon: UtensilsCrossed, tone: 'border-brand/40 bg-brand-tint text-brand-deep' },
+  takeaway: { icon: ShoppingBag, tone: 'border-wait/40 bg-wait-tint text-wait' },
+  delivery: { icon: Bike, tone: 'border-sky-700/40 bg-sky-50 text-sky-800' },
+  aggregator: { icon: Smartphone, tone: 'border-ok/40 bg-ok-tint text-ok' },
+}
 
 const typeName = (type: string) => TYPES.find(([value]) => value === type)?.[1] ?? type
 const money = (value: string) => `₹${value}`
@@ -28,11 +36,11 @@ export function Orders({ me }: { me: Me }) {
   const [error, setError] = useState('')
   const { ask, node } = useAsk()
   const navigate = useNavigate()
-  const [billing, setBilling] = useState(false)
   const [secondBill, setSecondBill] = useState<string[]>([])
   const canBill = me.permissions.includes('billing.write')
   const canWrite = me.permissions.includes('orders.write')
   const canDiscount = me.permissions.includes('orders.discount')
+  const canCancel = me.permissions.includes('orders.cancel')
 
   const list = useQuery({ queryKey: ['orders', branch], queryFn: () => api('/orders?status=open'), enabled: Boolean(branch), refetchInterval: 15000 })
   const menu = useQuery({ queryKey: ['menu', branch], queryFn: () => api(`/menu?branchId=${branch}`), enabled: Boolean(branch) })
@@ -41,7 +49,7 @@ export function Orders({ me }: { me: Me }) {
   const quote = useQuery({
     queryKey: ['quote', orderId, order.data?.version],
     queryFn: () => api(`/orders/${orderId}/quote`),
-    enabled: billing && Boolean(orderId),
+    enabled: Boolean(orderId && order.data?.confirmed_at && order.data?.status === 'open'),
   })
 
   const issue = useMutation({
@@ -156,6 +164,14 @@ export function Orders({ me }: { me: Me }) {
     change.mutate({ path: '/discounts', body: () => ({ id: crypto.randomUUID(), kind, value, reason: answer.reason }) })
   }
 
+  function confirmOrder() {
+    change.mutate({ path: '/confirm', body: (latest) => ({ version: latest.version }) })
+  }
+
+  function deleteEmpty() {
+    change.mutate({ path: '/cancel', body: (latest) => ({ version: latest.version }) }, { onSuccess: () => setOrderId(null) })
+  }
+
   async function serviceCharge() {
     const answer = await ask('Voluntary service charge', [
       { name: 'percent', label: 'Percent (use 0 to remove)', required: true, defaultValue: current?.service_charge_percent ?? '0', inputMode: 'decimal' },
@@ -194,6 +210,10 @@ export function Orders({ me }: { me: Me }) {
   const products = (menu.data?.products ?? []).filter((product: any) => product.is_active && (!category || product.category_id === category))
   const categories = (menu.data?.categories ?? []).filter((item: any) => item.is_active)
   const open = current?.status === 'open'
+  const confirmed = Boolean(current?.confirmed_at)
+  const canEdit = open && !confirmed && canWrite
+  const empty = !current?.items.some((item: any) => item.status === 'active')
+  const CurrentIcon = current ? TYPE_LOOK[current.order_type].icon : null
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_22rem]">
@@ -203,9 +223,14 @@ export function Orders({ me }: { me: Me }) {
           title="Orders"
           action={canWrite && (
             <div className="flex flex-wrap gap-2">
-              {TYPES.map(([value, label]) => (
-                <button key={value} className="btn btn-secondary" disabled={start.isPending} onClick={() => newOrder(value)}>{label}</button>
-              ))}
+              {TYPES.map(([value, label]) => {
+                const { icon: Icon, tone } = TYPE_LOOK[value]
+                return (
+                  <button key={value} className={`btn border ${tone}`} disabled={start.isPending} onClick={() => newOrder(value)}>
+                    <Icon size={16} aria-hidden="true" /> {label}
+                  </button>
+                )
+              })}
             </div>
           )}
         />
@@ -213,22 +238,30 @@ export function Orders({ me }: { me: Me }) {
         <Loading ready={!list.isPending} error={list.error}>
           <ul className="mb-5 flex gap-2 overflow-x-auto pb-1">
             {list.data?.items.length === 0 && <li className="text-sm text-ink-soft">No open orders. Start one above.</li>}
-            {list.data?.items.map((item: any) => (
-              <li key={item.id}>
-                <button
-                  aria-pressed={item.id === orderId}
-                  className={`min-h-14 min-w-28 rounded-xl border px-3 py-1.5 text-left text-sm ${item.id === orderId ? 'border-ink bg-ink text-white' : 'border-line'}`}
-                  onClick={() => setOrderId(item.id)}
-                >
-                  <span className="font-mono">#{item.display_number}</span> {item.table_label}
-                  <span className="block text-xs opacity-75">{typeName(item.order_type)} · {item.item_count} items</span>
-                </button>
-              </li>
-            ))}
+            {list.data?.items.map((item: any) => {
+              const { icon: Icon, tone } = TYPE_LOOK[item.order_type]
+              return (
+                <li key={item.id}>
+                  <button
+                    aria-pressed={item.id === orderId}
+                    className={`min-h-14 min-w-32 rounded-xl border px-3 py-1.5 text-left text-sm ${tone} ${item.id === orderId ? 'ring-2 ring-ink ring-offset-1' : ''}`}
+                    onClick={() => setOrderId(item.id)}
+                  >
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <Icon size={15} aria-hidden="true" />
+                      <span className="font-mono">#{item.display_number}</span>
+                      {item.table_label}
+                      {item.confirmed_at && <Lock size={12} aria-label="Confirmed" className="ml-auto" />}
+                    </span>
+                    <span className="block whitespace-nowrap text-xs">{typeName(item.order_type)} · {item.item_count} {item.item_count === 1 ? 'item' : 'items'}</span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         </Loading>
 
-        {current && open && canWrite && (
+        {current && canEdit && (
           <>
             <div className="mb-3 flex gap-2 overflow-x-auto pb-1 text-sm">
               <button className={`btn !min-h-10 ${!category ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setCategory(null)}>All</button>
@@ -262,7 +295,10 @@ export function Orders({ me }: { me: Me }) {
         {!current && <p className="text-ink-soft">Select or start an order.</p>}
         {current && (
           <>
-            <p className="text-sm text-ink-soft">{typeName(current.order_type)}{current.aggregator ? ` · ${current.aggregator}` : ''}</p>
+            <p className="flex items-center gap-1.5 text-sm text-ink-soft">
+              {CurrentIcon && <CurrentIcon size={14} aria-hidden="true" />}
+              {typeName(current.order_type)}{current.aggregator ? ` · ${current.aggregator}` : ''}
+            </p>
             <h2 className="text-xl">Order #{current.display_number}{current.table_label ? ` · ${current.table_label}` : ''}</h2>
 
             {error && <div className="mt-3"><Notice>{error}</Notice></div>}
@@ -285,7 +321,7 @@ export function Orders({ me }: { me: Me }) {
                     <span className="font-mono">{money(item.line_total)}</span>
                   </div>
                   {item.addons.map((addon: any) => <p key={addon.id} className="text-xs text-ink-soft">+ {addon.name}</p>)}
-                  {open && canWrite && (
+                  {canEdit && (
                     <div className="mt-1 flex items-center gap-1">
                       <button
                         aria-label={`One less ${item.product_name}`}
@@ -328,15 +364,17 @@ export function Orders({ me }: { me: Me }) {
 
             {open && (
               <div className="mt-3 flex flex-wrap gap-2">
-                {canBill && <button className="btn btn-primary w-full" disabled={Number(current.subtotal) === 0} onClick={() => setBilling(!billing)}>{billing ? 'Hide bill' : 'Create bill'}</button>}
-                {canDiscount && <button className="btn btn-secondary" onClick={discount}>Discount</button>}
-                {canWrite && <button className="btn btn-secondary" onClick={serviceCharge}>Service charge</button>}
+                {!confirmed && !empty && canWrite && <button className="btn btn-primary w-full" disabled={change.isPending} onClick={confirmOrder}>Confirm order</button>}
+                {confirmed && <p className="w-full text-sm text-ink-soft"><Lock size={13} className="mr-1 inline" aria-hidden="true" />Confirmed. Items can’t be changed, but a discount can be added.</p>}
+                {canDiscount && !empty && <button className="btn btn-secondary" onClick={discount}>Discount</button>}
+                {!confirmed && !empty && canWrite && <button className="btn btn-secondary" onClick={serviceCharge}>Service charge</button>}
                 {canBill && <button className="btn btn-secondary" onClick={customer}>{current.customer_name ?? 'Add customer'}</button>}
-                {canWrite && <button className="btn btn-secondary" onClick={cancel}>Cancel order</button>}
+                {empty && canWrite && <button className="btn btn-secondary" disabled={change.isPending} onClick={deleteEmpty}>Delete order</button>}
+                {!empty && (confirmed ? canCancel : canWrite) && <button className="btn btn-secondary" onClick={cancel}>Cancel order</button>}
               </div>
             )}
 
-            {open && billing && (
+            {open && confirmed && canBill && (
               <section className="mt-3 rounded-xl bg-paper-soft p-3 ring-1 ring-line">
                 {quote.error && <Notice>{quote.error.message}</Notice>}
                 {quote.isPending && <p className="text-sm text-ink-soft">Calculating…</p>}

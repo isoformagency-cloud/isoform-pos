@@ -43,7 +43,8 @@ const newItem = z.strictObject({
 })
 const itemUpdate = z.strictObject({ version, quantity: quantity.optional(), notes: z.string().trim().max(200).optional() })
 const voidItem = z.strictObject({ version, reason })
-const cancelOrder = z.strictObject({ version, reason })
+const cancelOrder = z.strictObject({ version, reason: reason.optional() })
+const confirmOrder = z.strictObject({ version })
 const newDiscount = z.strictObject({
   id: z.uuid(),
   kind: z.enum(['percent', 'amount']),
@@ -59,7 +60,7 @@ function workingBranch(actor: Actor) {
 async function loadOrder(db: Db, id: string) {
   const { rows: [order] } = await db.query(
     `select o.id, o.branch_id, o.display_number, o.order_type, o.aggregator, o.aggregator_reference, o.table_label, o.status,
-            o.service_charge_percent::text, o.business_date::text, o.notes, o.version, o.created_at, o.cancel_reason,
+            o.service_charge_percent::text, o.business_date::text, o.notes, o.version, o.created_at, o.cancel_reason, o.confirmed_at,
             o.customer_id, c.name as customer_name
        from app.orders o left join app.customers c on c.id = o.customer_id where o.id = $1`,
     [id],
@@ -116,7 +117,7 @@ orders.get('/orders', requires('orders.read'), async (c) => {
   const before = z.iso.datetime({ offset: true }).optional().parse(c.req.query('before'))
   const items = await tx(dbContext(actor), async (db) => {
     const { rows } = await db.query(
-      `select o.id, o.display_number, o.order_type, o.table_label, o.status, o.version, o.created_at, o.branch_id,
+      `select o.id, o.display_number, o.order_type, o.table_label, o.status, o.version, o.created_at, o.branch_id, o.confirmed_at,
               (select count(*)::int from app.order_items i where i.order_id = o.id and i.status = 'active') as item_count
          from app.orders o
         where o.status = $1 and o.branch_id = any($2::uuid[]) and ($3::timestamptz is null or o.created_at < $3)
@@ -300,14 +301,37 @@ orders.post('/orders/:id/cancel', requires('orders.write'), async (c) => {
       `select count(*)::int as active from app.order_items where order_id = $1 and status = 'active'`,
       [id],
     )
-    // Abandoning an empty order is routine. Cancelling one with items needs authority.
+    // Deleting an empty order is routine. Cancelling one with items needs authority and a reason.
     if (active > 0 && !can(actor.role, 'orders.cancel')) throw forbidden()
+    if (active > 0 && !input.reason) throw new AppError(422, 'reason_required', 'Give a reason for cancelling this order.')
+    const cancelReason = input.reason ?? 'Empty order'
     const { rowCount } = await db.query(
       `update app.orders set status = 'cancelled', cancel_reason = $3 where id = $1 and version = $2`,
-      [id, input.version, input.reason],
+      [id, input.version, cancelReason],
     )
     if (!rowCount) await touch(db, id, input.version)
-    await audit(db, actor, 'order.cancelled', 'order', id, { reason: input.reason, activeItems: active })
+    await audit(db, actor, 'order.cancelled', 'order', id, { reason: cancelReason, activeItems: active })
+    return loadOrder(db, id)
+  })
+})
+
+/** Locks what was ordered. After this, only a discount can change the bill. */
+orders.post('/orders/:id/confirm', requires('orders.write'), async (c) => {
+  const id = uuidParam(c.req.param('id'))
+  const input = await readBody(c, confirmOrder)
+  return command(c, 200, async (db, actor) => {
+    const { rows: [{ active }] } = await db.query(
+      `select count(*)::int as active from app.order_items where order_id = $1 and status = 'active'`,
+      [id],
+    )
+    if (active === 0) throw new AppError(409, 'empty_order', 'Add at least one item first.')
+    const { rowCount } = await db.query(
+      `update app.orders set confirmed_at = now(), confirmed_by = $3
+        where id = $1 and version = $2 and confirmed_at is null`,
+      [id, input.version, actor.membershipId],
+    )
+    if (!rowCount) await touch(db, id, input.version)
+    await audit(db, actor, 'order.confirmed', 'order', id, { activeItems: active })
     return loadOrder(db, id)
   })
 })
