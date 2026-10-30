@@ -4,9 +4,11 @@ import type { Env } from './platform/context'
 import { isConnectionError } from './platform/db'
 import { AppError } from './platform/errors'
 import { billing } from './modules/billing/routes'
+import { cash } from './modules/cash/routes'
 import { identity, pinLogin } from './modules/identity/routes'
 import { menu } from './modules/menu/routes'
 import { orders } from './modules/orders/routes'
+import { payments } from './modules/payments/routes'
 import { tenancy } from './modules/tenancy/routes'
 
 export const app = new Hono<Env>().basePath('/api/v1')
@@ -18,6 +20,8 @@ app.route('/', tenancy)
 app.route('/', menu)
 app.route('/', orders)
 app.route('/', billing)
+app.route('/', payments)
+app.route('/', cash)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))
 
@@ -36,6 +40,11 @@ app.onError((error, c) => {
   }
   if (error instanceof z.ZodError) {
     return c.json({ code: 'invalid', message: 'Please check the details.' }, 422)
+  }
+  // Database rules explain themselves. IDs are removed so nothing internal reaches a screen.
+  if ((error as { code?: string }).code === 'P0001') {
+    const text = error.message.replace(/\s?[0-9a-f]{8}-[0-9a-f-]{27}/g, '')
+    return c.json({ code: 'rule_broken', message: text.charAt(0).toUpperCase() + text.slice(1) + '.' }, 409)
   }
   const known = CONSTRAINT_ERRORS[(error as { code?: string }).code ?? '']
   if (known) return c.json({ code: known[1], message: known[2] }, known[0] as 400)

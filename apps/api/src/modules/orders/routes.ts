@@ -30,6 +30,7 @@ const orderUpdate = z.strictObject({
   tableLabel: z.string().trim().max(30).optional(),
   notes: z.string().trim().max(300).optional(),
   serviceChargePercent: amount.refine((value) => Number(value) <= 100).optional(),
+  customerId: z.uuid().optional(),
 })
 
 // Prices are never accepted here. They always come from the menu, and strict parsing rejects them.
@@ -57,9 +58,10 @@ function workingBranch(actor: Actor) {
 
 async function loadOrder(db: Db, id: string) {
   const { rows: [order] } = await db.query(
-    `select id, branch_id, display_number, order_type, aggregator, aggregator_reference, table_label, status,
-            service_charge_percent::text, business_date::text, notes, version, created_at, cancel_reason
-       from app.orders where id = $1`,
+    `select o.id, o.branch_id, o.display_number, o.order_type, o.aggregator, o.aggregator_reference, o.table_label, o.status,
+            o.service_charge_percent::text, o.business_date::text, o.notes, o.version, o.created_at, o.cancel_reason,
+            o.customer_id, c.name as customer_name
+       from app.orders o left join app.customers c on c.id = o.customer_id where o.id = $1`,
     [id],
   )
   if (!order) throw notFound('Order')
@@ -163,9 +165,10 @@ orders.patch('/orders/:id', requires('orders.write'), async (c) => {
     const { rowCount } = await db.query(
       `update app.orders set
          table_label = coalesce($3, table_label), notes = coalesce($4, notes),
-         service_charge_percent = coalesce($5, service_charge_percent)
+         service_charge_percent = coalesce($5, service_charge_percent),
+         customer_id = coalesce($6, customer_id)
        where id = $1 and version = $2`,
-      [id, input.version, input.tableLabel, input.notes, input.serviceChargePercent],
+      [id, input.version, input.tableLabel, input.notes, input.serviceChargePercent, input.customerId],
     )
     if (!rowCount) await touch(db, id, input.version)
     if (input.serviceChargePercent !== undefined) {

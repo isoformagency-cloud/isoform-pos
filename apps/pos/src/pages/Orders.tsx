@@ -163,6 +163,20 @@ export function Orders({ me }: { me: Me }) {
     if (answer) change.mutate({ path: '', method: 'PATCH', body: (latest) => ({ version: latest.version, serviceChargePercent: answer.percent }) })
   }
 
+  async function customer() {
+    const answer = await ask('Who is this bill for?', [
+      { name: 'name', label: 'Name', required: true, defaultValue: current?.customer_name ?? '' },
+      { name: 'phone', label: '10-digit mobile', required: true, inputMode: 'numeric' },
+    ], 'Save')
+    if (!answer) return
+    try {
+      const saved = await api('/customers', { method: 'POST', body: answer })
+      change.mutate({ path: '', method: 'PATCH', body: (latest) => ({ version: latest.version, customerId: saved.id }) })
+    } catch (failure) {
+      setError((failure as Error).message)
+    }
+  }
+
   async function issueBill() {
     if (await ask('Issue this bill?', [], 'Issue bill')) issue.mutate()
   }
@@ -317,6 +331,7 @@ export function Orders({ me }: { me: Me }) {
                 {canBill && <button className="btn btn-primary w-full" disabled={Number(current.subtotal) === 0} onClick={() => setBilling(!billing)}>{billing ? 'Hide bill' : 'Create bill'}</button>}
                 {canDiscount && <button className="btn btn-secondary" onClick={discount}>Discount</button>}
                 {canWrite && <button className="btn btn-secondary" onClick={serviceCharge}>Service charge</button>}
+                {canBill && <button className="btn btn-secondary" onClick={customer}>{current.customer_name ?? 'Add customer'}</button>}
                 {canWrite && <button className="btn btn-secondary" onClick={cancel}>Cancel order</button>}
               </div>
             )}

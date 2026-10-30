@@ -255,15 +255,17 @@ billing.get('/invoices', requires('billing.read'), async (c) => {
   const actor = c.get('actor')
   const date = z.iso.date().optional().parse(c.req.query('date'))
   const before = z.iso.datetime({ offset: true }).optional().parse(c.req.query('before'))
+  const unpaid = c.req.query('unpaid') === 'true'
   const items = await tx(dbContext(actor), async (db) => {
     const { rows } = await db.query(
       `select i.id, i.number, i.document_type, i.invoice_date::text, i.grand_total::text, i.issued_at, i.branch_id,
-              b.credited::text, b.outstanding::text
+              b.credited::text, b.outstanding::text, c.name as customer_name, c.phone as customer_phone
          from app.invoices i join app.invoice_balances b on b.invoice_id = i.id
+         left join app.customers c on c.id = i.customer_id
         where i.branch_id = any($1::uuid[]) and ($2::date is null or i.business_date = $2)
-          and ($3::timestamptz is null or i.issued_at < $3)
+          and ($3::timestamptz is null or i.issued_at < $3) and (not $4 or b.outstanding > 0)
         order by i.issued_at desc limit 50`,
-      [actor.branchIds, date ?? null, before ?? null],
+      [actor.branchIds, date ?? null, before ?? null, unpaid],
     )
     return rows
   })

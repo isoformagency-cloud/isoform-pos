@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, FileText, LayoutDashboard, LogOut, MonitorSmartphone, Receipt, Settings, Users, UtensilsCrossed } from 'lucide-react'
+import { Building2, CreditCard, FileText, LayoutDashboard, LogOut, MonitorSmartphone, Receipt, Settings, Users, UtensilsCrossed, Wallet } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router'
 import type { Me } from '../App'
 import { activeBranch, api, saveActiveBranch, supabase } from '../lib/api'
@@ -8,6 +8,8 @@ const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard },
   { to: '/orders', label: 'Orders', icon: Receipt, needs: 'orders.read' },
   { to: '/invoices', label: 'Bills', icon: FileText, needs: 'billing.read' },
+  { to: '/payments', label: 'Payments', icon: CreditCard, needs: 'payments.read' },
+  { to: '/cash', label: 'Cash', icon: Wallet, needs: 'cash.use' },
   { to: '/menu', label: 'Menu', icon: UtensilsCrossed, needs: 'menu.read' },
   { to: '/branches', label: 'Branches', icon: Building2, needs: 'branches.read' },
   { to: '/staff', label: 'Staff', icon: Users, needs: 'staff.read' },

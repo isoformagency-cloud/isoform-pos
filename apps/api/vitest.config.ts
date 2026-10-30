@@ -5,7 +5,7 @@ import { loadEnv } from 'vite'
 export default defineConfig({
   test: {
     env: loadEnv('', fileURLToPath(new URL('../..', import.meta.url)), ''),
-    testTimeout: 60000,
+    testTimeout: 180000,
     hookTimeout: 120000,
     // Every file creates businesses on the one shared Supabase project.
     fileParallelism: false,

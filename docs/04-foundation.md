@@ -86,3 +86,11 @@ Decisions for accountant review: tax is rounded per line, half-up. Service charg
 Reliability work: every transaction now has a 20 second statement limit, 10 second lock limit and 30 second abandoned-transaction limit, set inside the transaction because role settings do not apply through the pooler. A connection dying mid-request fails only that request. Connection attempts retry, and the POS retries failed saves with the same idempotency key.
 
 Known limits: opening a new pooler connection sometimes stalled for 9 seconds from this PC, with DNS and TCP both clean, so the stall is in the pooler handshake. Three full test runs failed from connection problems before the final fixes, and only the last run passed in full. Behaviour from a server in Mumbai is unmeasured. Printing has not been tested on a real thermal printer. A tax invoice has not been checked in the browser, only through API tests.
+
+## Payments and cash (Stage 5)
+
+Built: recording cash, UPI, card and bank payments with references and tips, split and partial payments, verification, failed and voided payments that reopen the bill, refunds, simple customers for unpaid bills, and cash sessions with blind counting, movements, review and shortfall tracking. Tests: 135 of 135 on the API, 94 of 94 on database rules.
+
+Decisions to review: only managers and owners can move cash in or out of the drawer or record refunds. Cashiers do not see expected cash, movements or the difference. Accountants can verify payments and review sessions.
+
+Known limits: pending payments are in the database but have no API or POS flow. Several registers in one branch need a register picker in the POS, because the API asks for a register when more than one session is open. Refunds use the original payment's method in the POS, and the API allows another. Reconciliation and settlements are not built. Tests retry 503 responses the way the POS does, because rare connection stalls continue from this PC. One run ended with a Windows crash of the test runner after all its tests passed, and left orphan test logins. Test logins with no business do no harm and can be removed from Supabase Auth.

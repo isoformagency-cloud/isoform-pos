@@ -2,7 +2,7 @@
 // They create two businesses and remove everything afterwards.
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { app } from './app'
+import { request } from './testing'
 import { provisionBusiness } from './modules/tenancy/provision'
 import { closeDb } from './platform/db'
 import { createSession, supabaseAdmin } from './platform/supabase'
@@ -24,7 +24,7 @@ let db: pg.Client
 
 async function call(method: string, path: string, token?: string, body?: unknown, headers: Record<string, string> = {}) {
   const write = method !== 'GET'
-  const response = await app.request(`/api/v1${path}`, {
+  const response = await request(`/api/v1${path}`, {
     method,
     headers: {
       ...(token ? { authorization: `Bearer ${token}` } : {}),
