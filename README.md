@@ -10,7 +10,7 @@ ISOFORM POS records payments. It does not process them.
 | `docs/` | Stages 1 to 3 approved |
 | `supabase/migrations` | Database schema, applied to Supabase. Checks: `npm run verify:schema` |
 | `apps/site` | Marketing site built, not deployed |
-| `apps/api`, `apps/pos` | Foundation built and tested locally, not deployed. See [Stage 4](docs/04-foundation.md) |
+| `apps/api`, `apps/pos` | Pilot core built and tested locally, not deployed. See [Stage 4](docs/04-foundation.md) |
 
 ## Marketing site
 

@@ -10,7 +10,7 @@ const admin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVIC
 const { rows: tenants } = await db.query(
   `select distinct m.tenant_id from app.memberships m join auth.users u on u.id = m.user_id
     where m.role = 'owner' and u.email ~ $1`,
-  ['^(orders|menu|billing|pay|owner-[ab])-.*@staff\\.isoform\\.invalid$'],
+  ['^(orders|menu|billing|pay|rep|owner-[ab])-.*@staff\\.isoform\\.invalid$'],
 )
 for (const { tenant_id: tenant } of tenants) {
   const { rows: users } = await db.query(`select user_id from app.memberships where tenant_id = $1`, [tenant])

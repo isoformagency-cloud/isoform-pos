@@ -1,15 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CreditCard, FileText, LayoutDashboard, LogOut, MonitorSmartphone, Receipt, Settings, Users, UtensilsCrossed, Wallet } from 'lucide-react'
+import { Building2, ChartColumn, CreditCard, FileText, LayoutDashboard, LogOut, MonitorSmartphone, Receipt, Settings, Users, UtensilsCrossed, Wallet } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router'
 import type { Me } from '../App'
 import { activeBranch, api, saveActiveBranch, supabase } from '../lib/api'
 
-const NAV = [
+const NAV: { to: string; label: string; icon: typeof Receipt; needs?: string; orNeeds?: string }[] = [
   { to: '/', label: 'Home', icon: LayoutDashboard },
   { to: '/orders', label: 'Orders', icon: Receipt, needs: 'orders.read' },
   { to: '/invoices', label: 'Bills', icon: FileText, needs: 'billing.read' },
   { to: '/payments', label: 'Payments', icon: CreditCard, needs: 'payments.read' },
-  { to: '/cash', label: 'Cash', icon: Wallet, needs: 'cash.use' },
+  { to: '/cash', label: 'Cash', icon: Wallet, needs: 'cash.use', orNeeds: 'cash.review' },
+  { to: '/reports', label: 'Reports', icon: ChartColumn, needs: 'reports.read' },
   { to: '/menu', label: 'Menu', icon: UtensilsCrossed, needs: 'menu.read' },
   { to: '/branches', label: 'Branches', icon: Building2, needs: 'branches.read' },
   { to: '/staff', label: 'Staff', icon: Users, needs: 'staff.read' },
@@ -20,7 +21,7 @@ const NAV = [
 export function Shell({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const branches = useQuery({ queryKey: ['branches'], queryFn: () => api('/branches') })
-  const items = NAV.filter((item) => !item.needs || me.permissions.includes(item.needs))
+  const items = NAV.filter((item) => !item.needs || me.permissions.includes(item.needs) || (item.orNeeds && me.permissions.includes(item.orNeeds)))
   const list: { id: string; name: string }[] = branches.data?.items ?? []
 
   return (

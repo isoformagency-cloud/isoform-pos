@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { audit, command, dbContext, readBody, requires, session, type Actor, type Env } from '../../platform/context'
+import { audit, command, dbContext, readBody, requires, requiresAny, session, type Actor, type Env } from '../../platform/context'
 import { tx, type Db } from '../../platform/db'
 import { AppError, notFound } from '../../platform/errors'
 import { can } from '../../platform/permissions'
@@ -71,7 +71,7 @@ cash.get('/registers', requires('cash.use'), async (c) => {
   return c.json({ items })
 })
 
-cash.get('/cash-sessions', requires('cash.use'), async (c) => {
+cash.get('/cash-sessions', requiresAny('cash.use', 'cash.review'), async (c) => {
   const actor = c.get('actor')
   const status = z.enum(['open', 'closed', 'reviewed']).optional().parse(c.req.query('status'))
   const reviewer = can(actor.role, 'cash.review')
@@ -89,7 +89,7 @@ cash.get('/cash-sessions', requires('cash.use'), async (c) => {
   return c.json({ items })
 })
 
-cash.get('/cash-sessions/:id', requires('cash.use'), async (c) => {
+cash.get('/cash-sessions/:id', requiresAny('cash.use', 'cash.review'), async (c) => {
   const id = uuidParam(c.req.param('id'))
   const actor = c.get('actor')
   return c.json(await tx(dbContext(actor), (db) => loadSession(db, actor, id)))

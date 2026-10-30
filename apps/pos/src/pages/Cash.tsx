@@ -21,7 +21,7 @@ export function Cash({ me }: { me: Me }) {
   const canUse = me.permissions.includes('cash.use')
 
   const registers = useQuery({ queryKey: ['registers', branch], queryFn: () => api('/registers'), enabled: Boolean(branch) && canUse })
-  const sessions = useQuery({ queryKey: ['sessions', branch], queryFn: () => api('/cash-sessions'), enabled: canUse })
+  const sessions = useQuery({ queryKey: ['sessions', branch], queryFn: () => api('/cash-sessions'), enabled: canUse || canReview })
   const session = useQuery({ queryKey: ['session', viewing], queryFn: () => api(`/cash-sessions/${viewing}`), enabled: Boolean(viewing) })
 
   const act = useMutation({

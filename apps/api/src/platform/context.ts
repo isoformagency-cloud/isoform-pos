@@ -80,6 +80,11 @@ export const requires = (permission: Permission): MiddlewareHandler<Env> => asyn
   await next()
 }
 
+export const requiresAny = (...permissions: Permission[]): MiddlewareHandler<Env> => async (c, next) => {
+  if (!permissions.some((permission) => can(c.get('actor').role, permission))) throw forbidden()
+  await next()
+}
+
 export async function audit(db: Db, actor: Actor, action: string, entityType: string, entityId: string, after?: unknown, before?: unknown) {
   await db.query(
     `insert into app.audit_log (tenant_id, actor_membership_id, action, entity_type, entity_id, before_data, after_data)

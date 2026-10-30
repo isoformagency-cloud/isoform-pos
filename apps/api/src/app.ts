@@ -9,6 +9,7 @@ import { identity, pinLogin } from './modules/identity/routes'
 import { menu } from './modules/menu/routes'
 import { orders } from './modules/orders/routes'
 import { payments } from './modules/payments/routes'
+import { reports } from './modules/reports/routes'
 import { tenancy } from './modules/tenancy/routes'
 
 export const app = new Hono<Env>().basePath('/api/v1')
@@ -22,6 +23,7 @@ app.route('/', orders)
 app.route('/', billing)
 app.route('/', payments)
 app.route('/', cash)
+app.route('/', reports)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))
 

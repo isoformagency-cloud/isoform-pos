@@ -214,6 +214,9 @@ identity.post('/staff', requires('staff.write'), async (c) => {
         : await supabaseAdmin.auth.admin.createUser({ email, email_confirm: true })
       if (created.error || !created.data.user) {
         console.error('staff_auth_failed', created.error?.status, created.error?.code)
+        // Status 0 or 5xx means Supabase could not be reached. That is temporary, so the POS may retry.
+        const status = created.error?.status ?? 0
+        if (status === 0 || status >= 500) throw new AppError(503, 'auth_unavailable', 'Could not reach the login service. Please try again.')
         throw new AppError(409, 'staff_not_created', 'That person could not be added.')
       }
       userId = created.data.user.id

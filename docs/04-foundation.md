@@ -94,3 +94,9 @@ Built: recording cash, UPI, card and bank payments with references and tips, spl
 Decisions to review: only managers and owners can move cash in or out of the drawer or record refunds. Cashiers do not see expected cash, movements or the difference. Accountants can verify payments and review sessions.
 
 Known limits: pending payments are in the database but have no API or POS flow. Several registers in one branch need a register picker in the POS, because the API asks for a register when more than one session is open. Refunds use the original payment's method in the POS, and the API allows another. Reconciliation and settlements are not built. Tests retry 503 responses the way the POS does, because rare connection stalls continue from this PC. One run ended with a Windows crash of the test runner after all its tests passed, and left orphan test logins. Test logins with no business do no harm and can be removed from Supabase Auth.
+
+## Daily reports (Stage 5)
+
+Built: net sales, tax, payments recorded and confirmed, amount awaiting checks, amount still owed, refunds, tips, orders, payments by method, top items, tax by rate, cash sessions and branch totals, for up to 92 trading days. No profit figure is shown. Tests: 153 API tests with 1 failure on the last full run, in staff creation. That failure was traced to Supabase Auth being unreachable (status 0), now returned as a retryable 503. The foundation test file then passed 28 of 28. The full suite has not been rerun since that one-line change.
+
+The pilot core (registration through reports) is complete locally. Top items and tax by rate are before credit notes. Reports run live queries, with no summary tables. Rate limiting, certificate pinning, custom SMTP, a staging project and deployment remain before real use.

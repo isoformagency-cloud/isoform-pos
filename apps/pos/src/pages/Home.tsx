@@ -6,7 +6,7 @@ export function Home({ me }: { me: Me }) {
     <>
       <PageHeader title={`Hello, ${me.displayName}`} text="Your account is set up." />
       <p className="card p-6 text-ink-soft">
-        Open Cash to start your session, then Orders to take orders and issue bills. Reports are the next module.
+        Open Cash to start your session, then Orders to take orders and issue bills. Reports shows how the day went.
       </p>
     </>
   )

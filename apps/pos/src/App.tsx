@@ -14,6 +14,7 @@ import { Menu } from './pages/Menu'
 import { Orders } from './pages/Orders'
 import { Payments } from './pages/Payments'
 import { PinLogin } from './pages/PinLogin'
+import { Reports } from './pages/Reports'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
 
@@ -76,6 +77,7 @@ export function App() {
         <Route path="invoices/:id" element={<InvoiceDetail me={me.data} />} />
         <Route path="payments" element={<Payments me={me.data} />} />
         <Route path="cash" element={<Cash me={me.data} />} />
+        <Route path="reports" element={<Reports me={me.data} />} />
         <Route path="menu" element={<Menu me={me.data} />} />
         <Route path="branches" element={<Branches me={me.data} />} />
         <Route path="staff" element={<Staff me={me.data} />} />
