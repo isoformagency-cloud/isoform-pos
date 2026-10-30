@@ -226,11 +226,20 @@ The first version passed its tests, so I reviewed it by trying to break it. Thes
 
 ## 9. Known limits
 
-**Not yet tested. All of these are on the Stage 4 list:**
+**Tested on a real Supabase project (Postgres 17, Mumbai) on 30 October 2026: 19 of 19 checks pass.** Run `npm run verify:concurrency` against an empty project only. It removes everything it creates.
 
-- **Simultaneous users.** PGlite has one connection, so the locks that stop two cashiers colliding are designed but unproven. This is the most important gap.
-- **Speed under load.** No performance testing yet.
-- **Real Supabase.** The test uses a stand-in for `auth.users`. Roles, the connection pooler and Realtime need testing on a real project.
+- Simultaneous invoices left no duplicates or gaps, including when 10 of 60 failed.
+- Races to overpay, over-refund, duplicate a reference or open a second session each produced exactly the correct winners.
+- Movements racing a cash close were either included in expected cash or refused.
+- 300 mixed requests through the transaction pooler never crossed between businesses, and no context stayed on the shared connection.
+- With 100,000 orders, a day's list took 2.4 ms and open orders 0.1 ms of database time.
+- Supabase's `postgres` role is not a superuser, so the login role must be granted `app_user` explicitly. The Stage 4 migration includes this.
+
+**Not yet tested:**
+
+- **Realtime** and staff PIN sessions, which are prototyped first at Stage 4.
+- **Invoice throughput from the API.** One series handled 6.5 invoices a second from a PC, with several network trips per invoice while it held the lock. That is well above one branch's needs, and should improve from a server in Mumbai, but it needs measuring there.
+- **Sustained load** with many businesses at once.
 
 **Enforced by the API, not the database:**
 
