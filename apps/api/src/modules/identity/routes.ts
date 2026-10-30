@@ -207,7 +207,10 @@ identity.post('/staff', requires('staff.write'), async (c) => {
   const created = input.email
     ? await supabaseAdmin.auth.admin.inviteUserByEmail(email)
     : await supabaseAdmin.auth.admin.createUser({ email, email_confirm: true })
-  if (created.error || !created.data.user) throw new AppError(409, 'staff_not_created', 'That person could not be added.')
+  if (created.error || !created.data.user) {
+    console.error('staff_auth_failed', created.error?.status, created.error?.code)
+    throw new AppError(409, 'staff_not_created', 'That person could not be added.')
+  }
   const userId = created.data.user.id
 
   try {

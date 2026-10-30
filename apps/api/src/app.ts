@@ -3,6 +3,7 @@ import { z } from 'zod'
 import type { Env } from './platform/context'
 import { AppError } from './platform/errors'
 import { identity, pinLogin } from './modules/identity/routes'
+import { menu } from './modules/menu/routes'
 import { tenancy } from './modules/tenancy/routes'
 
 export const app = new Hono<Env>().basePath('/api/v1')
@@ -11,6 +12,7 @@ app.get('/health', (c) => c.json({ ok: true }))
 app.route('/', pinLogin)
 app.route('/', identity)
 app.route('/', tenancy)
+app.route('/', menu)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))
 

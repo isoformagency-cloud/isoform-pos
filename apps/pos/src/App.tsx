@@ -8,6 +8,7 @@ import { Branches } from './pages/Branches'
 import { Devices } from './pages/Devices'
 import { Home } from './pages/Home'
 import { Login, SetPassword } from './pages/Login'
+import { Menu } from './pages/Menu'
 import { PinLogin } from './pages/PinLogin'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
@@ -66,6 +67,7 @@ export function App() {
     <Routes>
       <Route element={<Shell me={me.data} />}>
         <Route index element={<Home me={me.data} />} />
+        <Route path="menu" element={<Menu me={me.data} />} />
         <Route path="branches" element={<Branches me={me.data} />} />
         <Route path="staff" element={<Staff me={me.data} />} />
         <Route path="devices" element={<Devices />} />

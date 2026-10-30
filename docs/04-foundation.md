@@ -58,3 +58,9 @@ Private Broadcast channels named `branch:<id>`. `app.can_listen` decides access,
 - **API integration tests run on the one Supabase project** and clean up after themselves. A separate staging project is advisable before real customers.
 - **Offline-ready rules** (device-created IDs) start with the orders module.
 - **The API is not yet deployed.** The POS and API need a Vercel project, which comes with the first deployment.
+
+## Menu module (Stage 5)
+
+Built: tax rates, categories, products with variants, add-ons, branch prices and sold-out status, with deactivation instead of deletion. API tests: 47 of 47 on two consecutive runs. One earlier run had a staff-creation test return 409 while test files ran in parallel. It did not repeat, the cause is unknown, and the API now logs the Supabase status if it recurs.
+
+Not built yet: product images, a POS screen for linking add-ons to items, and a button to remove a branch price. The API supports the last two.

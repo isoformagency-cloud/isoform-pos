@@ -6,7 +6,7 @@ export function Home({ me }: { me: Me }) {
     <>
       <PageHeader title={`Hello, ${me.displayName}`} text="Your account is set up." />
       <p className="card p-6 text-ink-soft">
-        Menu, orders and billing are the next modules. They will appear here when they’re built.
+        Orders and billing are the next modules. They will appear here when they’re built.
       </p>
     </>
   )
