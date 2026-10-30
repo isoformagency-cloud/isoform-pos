@@ -59,6 +59,9 @@ app.onError((error, c) => {
   const known = CONSTRAINT_ERRORS[(error as { code?: string }).code ?? '']
   if (known) return c.json({ code: known[1], message: known[2] }, known[0] as 400)
   if (isConnectionError(error)) {
+    // Host and code explain a failure without exposing any password or data.
+    const { code, hostname, address } = error as { code?: string; hostname?: string; address?: string }
+    console.error('database_connection_failed', code ?? error.message.slice(0, 80), hostname ?? address ?? '')
     return c.json({ code: 'database_unavailable', message: 'Could not reach the database. Please try again.' }, 503)
   }
   // Log the kind of failure only. Never log request bodies, tokens or PINs.
