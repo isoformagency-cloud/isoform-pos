@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, LayoutDashboard, LogOut, MonitorSmartphone, Receipt, Settings, Users, UtensilsCrossed } from 'lucide-react'
+import { Building2, FileText, LayoutDashboard, LogOut, MonitorSmartphone, Receipt, Settings, Users, UtensilsCrossed } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router'
 import type { Me } from '../App'
 import { activeBranch, api, saveActiveBranch, supabase } from '../lib/api'
@@ -7,6 +7,7 @@ import { activeBranch, api, saveActiveBranch, supabase } from '../lib/api'
 const NAV = [
   { to: '/', label: 'Home', icon: LayoutDashboard },
   { to: '/orders', label: 'Orders', icon: Receipt, needs: 'orders.read' },
+  { to: '/invoices', label: 'Bills', icon: FileText, needs: 'billing.read' },
   { to: '/menu', label: 'Menu', icon: UtensilsCrossed, needs: 'menu.read' },
   { to: '/branches', label: 'Branches', icon: Building2, needs: 'branches.read' },
   { to: '/staff', label: 'Staff', icon: Users, needs: 'staff.read' },
@@ -22,7 +23,7 @@ export function Shell({ me }: { me: Me }) {
 
   return (
     <div className="min-h-svh md:grid md:grid-cols-[13.5rem_1fr]">
-      <aside className="flex flex-col border-b border-line bg-paper-soft p-3 md:min-h-svh md:border-r md:border-b-0">
+      <aside className="no-print flex flex-col border-b border-line bg-paper-soft p-3 md:min-h-svh md:border-r md:border-b-0">
         <p className="px-2 py-2 font-display font-semibold tracking-tight">ISOFORM POS</p>
         {list.length > 1 && (
           <label className="field mt-2 px-1">

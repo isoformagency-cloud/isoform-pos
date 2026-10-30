@@ -1,7 +1,9 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { Env } from './platform/context'
+import { isConnectionError } from './platform/db'
 import { AppError } from './platform/errors'
+import { billing } from './modules/billing/routes'
 import { identity, pinLogin } from './modules/identity/routes'
 import { menu } from './modules/menu/routes'
 import { orders } from './modules/orders/routes'
@@ -15,10 +17,13 @@ app.route('/', identity)
 app.route('/', tenancy)
 app.route('/', menu)
 app.route('/', orders)
+app.route('/', billing)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))
 
 const CONSTRAINT_ERRORS: Record<string, [number, string, string]> = {
+  '55P03': [503, 'busy', 'That record is busy. Please try again.'],
+  '57014': [503, 'busy', 'That took too long. Please try again.'],
   '23505': [409, 'duplicate', 'That already exists.'],
   '23503': [422, 'invalid_reference', 'That refers to something that does not exist.'],
   '42501': [403, 'forbidden', 'You do not have permission to do this.'],
@@ -34,6 +39,9 @@ app.onError((error, c) => {
   }
   const known = CONSTRAINT_ERRORS[(error as { code?: string }).code ?? '']
   if (known) return c.json({ code: known[1], message: known[2] }, known[0] as 400)
+  if (isConnectionError(error)) {
+    return c.json({ code: 'database_unavailable', message: 'Could not reach the database. Please try again.' }, 503)
+  }
   // Log the kind of failure only. Never log request bodies, tokens or PINs.
   console.error('unhandled_error', (error as { code?: string }).code ?? error.name)
   return c.json({ code: 'server_error', message: 'Something went wrong.' }, 500)

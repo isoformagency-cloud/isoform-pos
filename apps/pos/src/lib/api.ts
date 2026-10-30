@@ -46,21 +46,30 @@ export async function api<T = any>(path: string, options: { method?: string; bod
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   const branchId = branch ? activeBranch() : null
-  let response: Response
-  try {
-    response = await fetch(`/api/v1${path}`, {
-      method,
-      headers: {
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...(branchId ? { 'x-branch-id': branchId } : {}),
-        ...(method === 'GET' ? {} : { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() }),
-      },
-      body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
-    })
-  } catch {
-    throw new ApiError(0, 'offline', 'Could not reach ISOFORM. Check your connection.')
+  // One key per action, reused on retries, so a retried save can never happen twice.
+  const key = crypto.randomUUID()
+
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response | null = null
+    try {
+      response = await fetch(`/api/v1${path}`, {
+        method,
+        headers: {
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(branchId ? { 'x-branch-id': branchId } : {}),
+          ...(method === 'GET' ? {} : { 'content-type': 'application/json', 'idempotency-key': key }),
+        },
+        body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+      })
+    } catch {
+      // Handled below with the other temporary failures.
+    }
+    if (response && response.status !== 503) {
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new ApiError(response.status, payload.code ?? 'error', payload.message ?? 'Something went wrong.')
+      return payload as T
+    }
+    if (attempt === 2) throw new ApiError(response?.status ?? 0, 'offline', 'Could not reach ISOFORM. Check your connection and try again.')
+    await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)))
   }
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new ApiError(response.status, payload.code ?? 'error', payload.message ?? 'Something went wrong.')
-  return payload as T
 }

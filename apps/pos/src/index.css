@@ -109,3 +109,27 @@
     font-weight: 400;
   }
 }
+
+/* 80mm thermal receipts through the browser print dialog. */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  .print-area {
+    max-width: none;
+    border: 0;
+    padding: 0;
+    color: black;
+    font-size: 11px;
+  }
+}

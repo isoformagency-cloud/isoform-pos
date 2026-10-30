@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Minus, Plus, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
 import { Loading, Notice, PageHeader } from '../components/ui'
@@ -26,12 +27,44 @@ export function Orders({ me }: { me: Me }) {
   const [picking, setPicking] = useState<any | null>(null)
   const [error, setError] = useState('')
   const { ask, node } = useAsk()
+  const navigate = useNavigate()
+  const [billing, setBilling] = useState(false)
+  const [secondBill, setSecondBill] = useState<string[]>([])
+  const canBill = me.permissions.includes('billing.write')
   const canWrite = me.permissions.includes('orders.write')
   const canDiscount = me.permissions.includes('orders.discount')
 
   const list = useQuery({ queryKey: ['orders', branch], queryFn: () => api('/orders?status=open'), enabled: Boolean(branch), refetchInterval: 15000 })
   const menu = useQuery({ queryKey: ['menu', branch], queryFn: () => api(`/menu?branchId=${branch}`), enabled: Boolean(branch) })
   const order = useQuery({ queryKey: ['order', orderId], queryFn: () => api(`/orders/${orderId}`), enabled: Boolean(orderId) })
+
+  const quote = useQuery({
+    queryKey: ['quote', orderId, order.data?.version],
+    queryFn: () => api(`/orders/${orderId}/quote`),
+    enabled: billing && Boolean(orderId),
+  })
+
+  const issue = useMutation({
+    mutationFn: () => {
+      const items = order.data.items.filter((item: any) => item.status === 'active')
+      const part = (list: any[]) => ({ id: crypto.randomUUID(), items: list.map((item) => ({ orderItemId: item.id, quantity: item.quantity })) })
+      const second = items.filter((item: any) => secondBill.includes(item.id))
+      const first = items.filter((item: any) => !secondBill.includes(item.id))
+      return api(`/orders/${orderId}/finalize`, {
+        method: 'POST',
+        body: { version: order.data.version, invoices: second.length && first.length ? [part(first), part(second)] : [part(items)] },
+      })
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      navigate(data.invoices.length === 1 ? `/invoices/${data.invoices[0].id}` : '/invoices')
+    },
+    onError: (failure) => {
+      setError(failure.message)
+      queryClient.invalidateQueries({ queryKey: ['order', orderId] })
+    },
+  })
 
   const refreshList = () => queryClient.invalidateQueries({ queryKey: ['orders'] })
 
@@ -63,6 +96,8 @@ export function Orders({ me }: { me: Me }) {
     },
     onError: (failure) => setError(failure.message),
   })
+
+  const current = order.data
 
   if (!branch) {
     return (
@@ -121,6 +156,17 @@ export function Orders({ me }: { me: Me }) {
     change.mutate({ path: '/discounts', body: () => ({ id: crypto.randomUUID(), kind, value, reason: answer.reason }) })
   }
 
+  async function serviceCharge() {
+    const answer = await ask('Voluntary service charge', [
+      { name: 'percent', label: 'Percent (use 0 to remove)', required: true, defaultValue: current?.service_charge_percent ?? '0', inputMode: 'decimal' },
+    ], 'Save')
+    if (answer) change.mutate({ path: '', method: 'PATCH', body: (latest) => ({ version: latest.version, serviceChargePercent: answer.percent }) })
+  }
+
+  async function issueBill() {
+    if (await ask('Issue this bill?', [], 'Issue bill')) issue.mutate()
+  }
+
   async function remove(item: any) {
     const answer = await ask(`Remove ${item.product_name}?`, [{ name: 'reason', label: 'Reason', required: true }], 'Remove')
     if (answer) change.mutate({ path: `/items/${item.id}/void`, body: (latest) => ({ version: latest.version, reason: answer.reason }) })
@@ -131,7 +177,6 @@ export function Orders({ me }: { me: Me }) {
     if (answer) change.mutate({ path: '/cancel', body: (latest) => ({ version: latest.version, reason: answer.reason }) }, { onSuccess: () => setOrderId(null) })
   }
 
-  const current = order.data
   const products = (menu.data?.products ?? []).filter((product: any) => product.is_active && (!category || product.category_id === category))
   const categories = (menu.data?.categories ?? []).filter((item: any) => item.is_active)
   const open = current?.status === 'open'
@@ -269,9 +314,47 @@ export function Orders({ me }: { me: Me }) {
 
             {open && (
               <div className="mt-3 flex flex-wrap gap-2">
+                {canBill && <button className="btn btn-primary w-full" disabled={Number(current.subtotal) === 0} onClick={() => setBilling(!billing)}>{billing ? 'Hide bill' : 'Create bill'}</button>}
                 {canDiscount && <button className="btn btn-secondary" onClick={discount}>Discount</button>}
+                {canWrite && <button className="btn btn-secondary" onClick={serviceCharge}>Service charge</button>}
                 {canWrite && <button className="btn btn-secondary" onClick={cancel}>Cancel order</button>}
               </div>
+            )}
+
+            {open && billing && (
+              <section className="mt-3 rounded-xl bg-paper-soft p-3 ring-1 ring-line">
+                {quote.error && <Notice>{quote.error.message}</Notice>}
+                {quote.isPending && <p className="text-sm text-ink-soft">Calculating…</p>}
+                {quote.data?.bill && (
+                  <>
+                    <dl className="space-y-1 font-mono text-sm">
+                      <div className="flex justify-between"><dt>Taxable value</dt><dd>{money(quote.data.bill.taxableTotal)}</dd></div>
+                      <div className="flex justify-between"><dt>CGST</dt><dd>{money(quote.data.bill.cgstTotal)}</dd></div>
+                      <div className="flex justify-between"><dt>SGST</dt><dd>{money(quote.data.bill.sgstTotal)}</dd></div>
+                      {Number(quote.data.bill.roundOff) !== 0 && <div className="flex justify-between"><dt>Round off</dt><dd>{quote.data.bill.roundOff}</dd></div>}
+                      <div className="flex justify-between border-t border-ink pt-1 text-base font-semibold"><dt>Total</dt><dd>{money(quote.data.bill.grandTotal)}</dd></div>
+                    </dl>
+                    {current.items.filter((item: any) => item.status === 'active').length > 1 && (
+                      <fieldset className="mt-2 border-t border-line pt-2 text-sm">
+                        <legend className="text-xs text-ink-soft">Split: tick items for a second bill</legend>
+                        {current.items.filter((item: any) => item.status === 'active').map((item: any) => (
+                          <label key={item.id} className="flex min-h-10 items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={secondBill.includes(item.id)}
+                              onChange={(event) => setSecondBill(event.target.checked ? [...secondBill, item.id] : secondBill.filter((id) => id !== item.id))}
+                            />
+                            {item.product_name}
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
+                    <button className="btn btn-primary mt-2 w-full" disabled={issue.isPending} onClick={issueBill}>
+                      {issue.isPending ? 'Issuing…' : 'Issue bill'}
+                    </button>
+                  </>
+                )}
+              </section>
             )}
           </>
         )}

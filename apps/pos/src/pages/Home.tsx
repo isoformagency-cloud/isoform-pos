@@ -6,7 +6,7 @@ export function Home({ me }: { me: Me }) {
     <>
       <PageHeader title={`Hello, ${me.displayName}`} text="Your account is set up." />
       <p className="card p-6 text-ink-soft">
-        Billing and payments are the next modules. Open Orders to start taking orders.
+        Payments and cash are the next modules. Open Orders to take orders and issue bills.
       </p>
     </>
   )

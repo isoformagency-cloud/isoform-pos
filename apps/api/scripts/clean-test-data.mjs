@@ -14,7 +14,7 @@ const { rows: tenants } = await db.query(
 )
 for (const { tenant_id: tenant } of tenants) {
   const { rows: users } = await db.query(`select user_id from app.memberships where tenant_id = $1`, [tenant])
-  for (const table of ['audit_log', 'idempotency_keys', 'order_discounts', 'order_item_addons', 'order_status_history', 'order_items', 'orders',
+  for (const table of ['audit_log', 'idempotency_keys', 'credit_note_lines', 'credit_notes', 'invoice_lines', 'invoices', 'invoice_series', 'order_discounts', 'order_item_addons', 'order_status_history', 'order_items', 'orders',
     'device_pin_attempts', 'devices', 'branch_variant_overrides', 'product_addons', 'addons', 'product_variants', 'products', 'categories',
     'tax_rates', 'branch_memberships', 'registers', 'payment_methods', 'memberships', 'branches', 'tax_registrations']) {
     await db.query(`delete from app.${table} where tenant_id = $1`, [tenant])

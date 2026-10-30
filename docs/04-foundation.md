@@ -76,3 +76,13 @@ Decisions to review:
 - Service charge is stored on the order, defaults to 0 and is never added automatically. There is no POS control yet.
 
 Known limits: a tap took about 2 seconds from this PC to the Mumbai database, with tests running. Speed must be measured from a server in Mumbai. Orders update on other tills every 15 seconds, not instantly. Connection failures return a generic error, and POS offline handling is not built.
+
+## Billing module (Stage 5)
+
+Built: whole-number tax calculation in paise, GST bills and bills of supply, database-assigned numbering, automatic series per branch and financial year, split bills, voluntary service charge, credit notes, and an 80mm print layout. API tests: 109 of 109. Database rules: 94 of 94.
+
+Decisions for accountant review: tax is rounded per line, half-up. Service charge is taxed at the bill's highest item rate. Tax is charged only for the regular scheme. Unregistered businesses print 'Bill', and the database stores them as bill_of_supply.
+
+Reliability work: every transaction now has a 20 second statement limit, 10 second lock limit and 30 second abandoned-transaction limit, set inside the transaction because role settings do not apply through the pooler. A connection dying mid-request fails only that request. Connection attempts retry, and the POS retries failed saves with the same idempotency key.
+
+Known limits: opening a new pooler connection sometimes stalled for 9 seconds from this PC, with DNS and TCP both clean, so the stall is in the pooler handshake. Three full test runs failed from connection problems before the final fixes, and only the last run passed in full. Behaviour from a server in Mumbai is unmeasured. Printing has not been tested on a real thermal printer. A tax invoice has not been checked in the browser, only through API tests.

@@ -3,6 +3,7 @@ export type Role = 'owner' | 'manager' | 'cashier' | 'waiter' | 'kitchen' | 'acc
 const MANAGER = [
   'business.read', 'branches.read', 'staff.read', 'staff.write', 'devices.manage', 'menu.read', 'menu.write',
   'orders.read', 'orders.write', 'orders.discount', 'orders.cancel',
+  'billing.read', 'billing.write', 'billing.correct',
 ] as const
 const OWNER = [...MANAGER, 'business.write', 'branches.write'] as const
 
@@ -13,8 +14,8 @@ const FRONTLINE: readonly Permission[] = ['branches.read', 'menu.read', 'orders.
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: OWNER,
   manager: MANAGER,
-  accountant: ['business.read', 'branches.read', 'menu.read', 'orders.read'],
-  cashier: FRONTLINE,
+  accountant: ['business.read', 'branches.read', 'menu.read', 'orders.read', 'billing.read'],
+  cashier: [...FRONTLINE, 'billing.read', 'billing.write'],
   waiter: FRONTLINE,
   kitchen: ['branches.read', 'menu.read', 'orders.read'],
 }
