@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Me } from '../App'
+import { useAsk } from '../components/Ask'
 import { Loading, Notice, PageHeader } from '../components/ui'
 import { api } from '../lib/api'
 
@@ -10,6 +11,7 @@ export function Staff({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [role, setRole] = useState('cashier')
+  const { ask, node } = useAsk()
   const staff = useQuery({ queryKey: ['staff'], queryFn: () => api('/staff') })
   const branches = useQuery({ queryKey: ['branches'], queryFn: () => api('/branches') })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['staff'] })
@@ -46,6 +48,7 @@ export function Staff({ me }: { me: Me }) {
 
   return (
     <>
+      {node}
       <PageHeader
         title="Staff"
         text="Frontline staff use a PIN on a registered device. Managers and owners sign in with email."
@@ -94,7 +97,7 @@ export function Staff({ me }: { me: Me }) {
                   {member.has_pin && <button className="btn btn-secondary" onClick={() => unlock.mutate(member.id)}>Unlock PIN</button>}
                   <button
                     className="btn btn-secondary"
-                    onClick={() => window.confirm(`Remove ${member.display_name}?`) && remove.mutate(member.id)}
+                    onClick={async () => (await ask(`Remove ${member.display_name}?`, [], 'Remove')) && remove.mutate(member.id)}
                   >
                     Remove
                   </button>

@@ -204,17 +204,20 @@ identity.post('/staff', requires('staff.write'), async (c) => {
 
   const pinHash = input.pin ? await hash(input.pin) : null
   const email = input.email ?? `staff-${crypto.randomUUID()}@staff.isoform.invalid`
-  const created = input.email
-    ? await supabaseAdmin.auth.admin.inviteUserByEmail(email)
-    : await supabaseAdmin.auth.admin.createUser({ email, email_confirm: true })
-  if (created.error || !created.data.user) {
-    console.error('staff_auth_failed', created.error?.status, created.error?.code)
-    throw new AppError(409, 'staff_not_created', 'That person could not be added.')
-  }
-  const userId = created.data.user.id
+  let userId: string | undefined
 
   try {
     return await command(c, 201, async (db) => {
+      // Inside the command, so a replayed request never creates a second account.
+      const created = input.email
+        ? await supabaseAdmin.auth.admin.inviteUserByEmail(email)
+        : await supabaseAdmin.auth.admin.createUser({ email, email_confirm: true })
+      if (created.error || !created.data.user) {
+        console.error('staff_auth_failed', created.error?.status, created.error?.code)
+        throw new AppError(409, 'staff_not_created', 'That person could not be added.')
+      }
+      userId = created.data.user.id
+
       const { rows: [member] } = await db.query(
         `insert into app.memberships (tenant_id, user_id, display_name, role, pin_hash)
          values ($1, $2, $3, $4, $5) returning id, display_name, role`,
@@ -230,7 +233,7 @@ identity.post('/staff', requires('staff.write'), async (c) => {
       return member
     })
   } catch (error) {
-    await supabaseAdmin.auth.admin.deleteUser(userId)
+    if (userId) await supabaseAdmin.auth.admin.deleteUser(userId)
     throw error
   }
 })

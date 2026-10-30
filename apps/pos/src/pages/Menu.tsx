@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Me } from '../App'
+import { useAsk } from '../components/Ask'
 import { Loading, Notice, PageHeader } from '../components/ui'
 import { activeBranch, api } from '../lib/api'
 
@@ -19,6 +20,7 @@ type Panel = 'product' | 'category' | 'rate' | 'addon' | null
 export function Menu({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const [panel, setPanel] = useState<Panel>(null)
+  const { ask, node } = useAsk()
   const branch = activeBranch() ?? (me.branchIds.length === 1 ? me.branchIds[0] : null)
   const canWrite = me.permissions.includes('menu.write')
   const menu = useQuery({
@@ -50,10 +52,13 @@ export function Menu({ me }: { me: Me }) {
     })
   }
 
-  function editPrice(variant: Variant) {
+  async function editPrice(variant: Variant) {
     const scope = branch ? 'this branch' : 'all branches'
-    const next = window.prompt(`New price for ${variant.name} at ${scope}`, variant.price)
-    if (!next) return
+    const answer = await ask(`${variant.name} price at ${scope}`, [
+      { name: 'price', label: 'Price', required: true, defaultValue: variant.price, inputMode: 'decimal' },
+    ], 'Save')
+    if (!answer) return
+    const next = answer.price
     if (branch) change.mutate({ path: `/branches/${branch}/variants/${variant.id}`, method: 'PUT', body: { price: next, isAvailable: variant.isAvailable } })
     else change.mutate({ path: `/variants/${variant.id}`, method: 'PATCH', body: { price: next } })
   }
@@ -71,6 +76,7 @@ export function Menu({ me }: { me: Me }) {
 
   return (
     <>
+      {node}
       <PageHeader title="Menu" text={branch ? 'Showing prices for the selected branch.' : 'Showing menu prices for all branches.'} action={actions} />
 
       {panel === 'category' && (
@@ -156,6 +162,29 @@ export function Menu({ me }: { me: Me }) {
                         </button>
                       )}
                     </div>
+                    {canWrite && data.addons.length > 0 && (
+                      <fieldset className="mt-2 flex flex-wrap gap-x-4 text-sm">
+                        <legend className="sr-only">Add-ons for {product.name}</legend>
+                        {data.addons.filter((addon: any) => addon.is_active).map((addon: any) => (
+                          <label key={addon.id} className="flex min-h-10 items-center gap-2 text-ink-soft">
+                            <input
+                              type="checkbox"
+                              checked={product.addon_ids.includes(addon.id)}
+                              onChange={(event) => change.mutate({
+                                path: `/products/${product.id}/addons`,
+                                method: 'PUT',
+                                body: {
+                                  addonIds: event.target.checked
+                                    ? [...product.addon_ids, addon.id]
+                                    : product.addon_ids.filter((id: string) => id !== addon.id),
+                                },
+                              })}
+                            />
+                            {addon.name} (+₹{addon.price})
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
                     <ul className="mt-2 space-y-1">
                       {product.variants.map((variant: Variant) => (
                         <li key={variant.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -164,6 +193,14 @@ export function Menu({ me }: { me: Me }) {
                             {variant.hasBranchPrice && <span className="text-xs text-brand-deep">Branch price</span>}
                             <span className="font-mono">₹{variant.price}</span>
                             {canWrite && <button className="btn !min-h-9 text-sm underline" onClick={() => editPrice(variant)}>Price</button>}
+                            {canWrite && branch && variant.hasBranchPrice && (
+                              <button
+                                className="btn !min-h-9 text-sm underline"
+                                onClick={() => change.mutate({ path: `/branches/${branch}/variants/${variant.id}`, method: 'PUT', body: { price: null, isAvailable: variant.isAvailable } })}
+                              >
+                                Use menu price
+                              </button>
+                            )}
                             {canWrite && branch && (
                               <button
                                 className="btn btn-secondary !min-h-9 text-sm"

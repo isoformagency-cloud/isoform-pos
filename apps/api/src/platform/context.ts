@@ -33,31 +33,31 @@ export const session: MiddlewareHandler<Env> = async (c, next) => {
   if (!token) throw new AppError(401, 'invalid_session', 'Please sign in.')
   const userId = await verifyToken(token)
 
-  const memberships = await tx({ userId }, async (db) => {
-    const { rows } = await db.query(
+  const wanted = c.req.header('x-tenant-id')
+  // One transaction, so a request costs as few database trips as possible.
+  const { membership, status, branchIds } = await tx({ userId }, async (db) => {
+    const { rows: memberships } = await db.query(
       `select id, tenant_id, role, display_name from app.memberships where user_id = $1 and status = 'active'`,
       [userId],
     )
-    return rows
-  })
-  if (memberships.length === 0) throw forbidden()
+    if (memberships.length === 0) throw forbidden()
+    const chosen = wanted ? memberships.find((m) => m.tenant_id === wanted) : memberships.length === 1 ? memberships[0] : null
+    if (wanted && !chosen) throw forbidden()
+    if (!chosen) throw new AppError(400, 'tenant_required', 'Choose a business.')
 
-  const wanted = c.req.header('x-tenant-id')
-  const membership = wanted ? memberships.find((m) => m.tenant_id === wanted) : memberships.length === 1 ? memberships[0] : null
-  if (wanted && !membership) throw forbidden()
-  if (!membership) throw new AppError(400, 'tenant_required', 'Choose a business.')
-
-  const { status, branchIds } = await tx({ tenantId: membership.tenant_id, userId }, async (db) => {
-    const tenant = await db.query(`select status from app.tenants where id = $1`, [membership.tenant_id])
-    const branches =
-      membership.role === 'owner'
-        ? await db.query(`select id from app.branches where is_active`)
-        : await db.query(
-            `select b.id from app.branch_memberships bm join app.branches b on b.id = bm.branch_id
-              where bm.membership_id = $1 and b.is_active`,
-            [membership.id],
-          )
-    return { status: tenant.rows[0]?.status, branchIds: branches.rows.map((b) => b.id as string) }
+    // Two statements in one message: the tenant must be set before RLS is evaluated.
+    const tenant = db.escapeLiteral(chosen.tenant_id)
+    const results = (await db.query(
+      `select set_config('app.tenant_id', ${tenant}, true);
+       select (select status from app.tenants where id = ${tenant}::uuid) as status,
+         array(select b.id from app.branches b
+                where b.is_active and (${chosen.role === 'owner'} or exists (
+                  select 1 from app.branch_memberships bm
+                   where bm.membership_id = ${db.escapeLiteral(chosen.id)} and bm.branch_id = b.id))
+         )::text[] as branch_ids`,
+    )) as unknown as { rows: { status: string; branch_ids: string[] }[] }[]
+    const access = results[1].rows[0]
+    return { membership: chosen, status: access.status, branchIds: access.branch_ids }
   })
   if (status !== 'active') throw new AppError(403, 'business_inactive', 'This business account is not active.')
 
@@ -112,36 +112,24 @@ export async function command<T>(c: Context<Env>, status: 200 | 201, run: (db: D
   const actor = c.get('actor')
   const hash = createHash('sha256').update(`${c.req.method} ${c.req.path} ${c.get('rawBody') ?? ''}`).digest('hex')
 
-  const stored = async () =>
-    tx(dbContext(actor), async (db) => {
-      const { rows } = await db.query(
-        `select request_hash, response_status, response_body from app.idempotency_keys where key = $1`,
-        [key],
-      )
-      if (!rows[0]) return null
-      if (rows[0].request_hash !== hash) throw new AppError(409, 'idempotency_key_reused', 'This key was used for a different request.')
-      return rows[0]
-    })
-
-  const previous = await stored()
-  if (previous) return c.json(previous.response_body, previous.response_status)
-
-  try {
-    const body = await tx(dbContext(actor), async (db) => {
-      const result = await run(db, actor)
-      await db.query(
-        `insert into app.idempotency_keys (tenant_id, key, request_hash, response_status, response_body)
-         values ($1, $2, $3, $4, $5)`,
-        [actor.tenantId, key, hash, status, JSON.stringify(result ?? {})],
-      )
-      return result
-    })
-    return c.json((body ?? {}) as object, status)
-  } catch (error) {
-    if ((error as { constraint?: string }).constraint === 'idempotency_keys_pkey') {
-      const winner = await stored()
-      if (winner) return c.json(winner.response_body, winner.response_status)
+  const outcome = await tx(dbContext(actor), async (db) => {
+    // Same-key requests wait here, so a replay sees the first request's saved answer.
+    await db.query(`select pg_advisory_xact_lock(hashtextextended($1, 0))`, [`idempotency:${actor.tenantId}:${key}`])
+    const { rows: [previous] } = await db.query(
+      `select request_hash, response_status, response_body from app.idempotency_keys where key = $1`,
+      [key],
+    )
+    if (previous) {
+      if (previous.request_hash !== hash) throw new AppError(409, 'idempotency_key_reused', 'This key was used for a different request.')
+      return { status: previous.response_status as 200 | 201, body: previous.response_body }
     }
-    throw error
-  }
+    const body = (await run(db, actor)) ?? {}
+    await db.query(
+      `insert into app.idempotency_keys (tenant_id, key, request_hash, response_status, response_body)
+       values ($1, $2, $3, $4, $5)`,
+      [actor.tenantId, key, hash, status, JSON.stringify(body)],
+    )
+    return { status, body }
+  })
+  return c.json(outcome.body as object, outcome.status)
 }

@@ -4,6 +4,7 @@ import type { Env } from './platform/context'
 import { AppError } from './platform/errors'
 import { identity, pinLogin } from './modules/identity/routes'
 import { menu } from './modules/menu/routes'
+import { orders } from './modules/orders/routes'
 import { tenancy } from './modules/tenancy/routes'
 
 export const app = new Hono<Env>().basePath('/api/v1')
@@ -13,6 +14,7 @@ app.route('/', pinLogin)
 app.route('/', identity)
 app.route('/', tenancy)
 app.route('/', menu)
+app.route('/', orders)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))
 

@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAsk } from '../components/Ask'
 import { Loading, Notice, PageHeader } from '../components/ui'
 import { api, deviceCredential, saveDeviceCredential } from '../lib/api'
 
 export function Devices() {
   const queryClient = useQueryClient()
   const [registered, setRegistered] = useState(Boolean(deviceCredential()))
+  const { ask, node } = useAsk()
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => api('/devices') })
   const branches = useQuery({ queryKey: ['branches'], queryFn: () => api('/branches') })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['devices'] })
@@ -30,6 +32,7 @@ export function Devices() {
 
   return (
     <>
+      {node}
       <PageHeader title="Devices" text="Staff can only use a PIN on a device registered here." />
       {registered ? (
         <div className="mb-5"><Notice tone="ok">This device is registered for PIN login.</Notice></div>
@@ -56,7 +59,7 @@ export function Devices() {
                 <p className="text-sm capitalize text-ink-soft">{device.status}</p>
               </div>
               {device.status === 'active' && (
-                <button className="btn btn-secondary" onClick={() => window.confirm(`Revoke ${device.name}?`) && revoke.mutate(device.id)}>Revoke</button>
+                <button className="btn btn-secondary" onClick={async () => (await ask(`Revoke ${device.name}?`, [], 'Revoke')) && revoke.mutate(device.id)}>Revoke</button>
               )}
             </li>
           ))}

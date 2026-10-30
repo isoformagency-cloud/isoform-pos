@@ -64,3 +64,15 @@ Private Broadcast channels named `branch:<id>`. `app.can_listen` decides access,
 Built: tax rates, categories, products with variants, add-ons, branch prices and sold-out status, with deactivation instead of deletion. API tests: 47 of 47 on two consecutive runs. One earlier run had a staff-creation test return 409 while test files ran in parallel. It did not repeat, the cause is unknown, and the API now logs the Supabase status if it recurs.
 
 Not built yet: product images, a POS screen for linking add-ons to items, and a button to remove a branch price. The API supports the last two.
+
+## Orders module (Stage 5)
+
+Built: order types including delivery apps, per-branch daily numbering, server-side price snapshots, sizes and add-ons, version checks, item removal with a reason, discounts, cancellation, and the POS counter screen. API tests: 69 of 69. An earlier run failed on network errors (ENOTFOUND, ECONNRESET) and passed unchanged on rerun.
+
+Decisions to review:
+
+- Cashiers can lower quantities and remove items on an open order, with the removal reason and quantity changes logged. Stage 2 said voids need a manager. Manager approval will apply once items are sent to the kitchen, because a cashier fixing a mistake before that is routine.
+- Discounts are limited to owners and managers. A cashier cannot request one yet, because on-the-spot manager approval is not built.
+- Service charge is stored on the order, defaults to 0 and is never added automatically. There is no POS control yet.
+
+Known limits: a tap took about 2 seconds from this PC to the Mumbai database, with tests running. Speed must be measured from a server in Mumbai. Orders update on other tills every 15 seconds, not instantly. Connection failures return a generic error, and POS offline handling is not built.

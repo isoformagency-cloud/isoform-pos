@@ -21,16 +21,13 @@ export type Db = pg.PoolClient
 export async function tx<T>(context: DbContext, fn: (db: Db) => Promise<T>): Promise<T> {
   const db = await pool.connect()
   try {
-    await db.query('begin')
+    // Sent as one message to save a network round trip. Values are escaped.
+    const value = (text: string | undefined) => db.escapeLiteral(text ?? '')
     await db.query(
-      `select set_config('app.tenant_id', $1, true), set_config('app.branch_ids', $2, true),
-              set_config('app.membership_id', $3, true), set_config('app.user_id', $4, true)`,
-      [
-        context.tenantId ?? '',
-        `{${(context.branchIds ?? []).join(',')}}`,
-        context.membershipId ?? '',
-        context.userId ?? '',
-      ],
+      `begin; select set_config('app.tenant_id', ${value(context.tenantId)}, true),
+         set_config('app.branch_ids', ${value(`{${(context.branchIds ?? []).join(',')}}`)}, true),
+         set_config('app.membership_id', ${value(context.membershipId)}, true),
+         set_config('app.user_id', ${value(context.userId)}, true)`,
     )
     const result = await fn(db)
     await db.query('commit')
