@@ -171,7 +171,8 @@ async function changeStatus(db: Db, actor: Actor, id: string, status: 'failed' |
 
 payments.get('/payment-methods', requires('payments.read'), async (c) => {
   const items = await tx(dbContext(c.get('actor')), async (db) => {
-    const { rows } = await db.query(`select id, name, kind, requires_reference from app.payment_methods where is_active order by name`)
+    const { rows } = await db.query(`select id, name, kind, requires_reference from app.payment_methods where is_active
+        order by array_position(array['cash', 'upi', 'card', 'bank_transfer', 'other'], kind), name`)
     return rows
   })
   return c.json({ items })

@@ -81,7 +81,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const tenant of [a.tenantId, b.tenantId]) {
-    for (const table of ['audit_log', 'idempotency_keys', 'order_discounts', 'order_item_addons', 'order_status_history', 'order_items', 'orders',
+    for (const table of ['audit_log', 'idempotency_keys', 'invoice_lines', 'invoices', 'invoice_series', 'order_discounts', 'order_item_addons', 'order_status_history', 'order_items', 'orders',
       'branch_variant_overrides', 'product_addons', 'addons', 'product_variants', 'products', 'categories', 'tax_rates',
       'branch_memberships', 'registers', 'payment_methods', 'memberships', 'branches', 'tax_registrations']) {
       await db.query(`delete from app.${table} where tenant_id = $1`, [tenant])
@@ -235,6 +235,70 @@ describe('removing and discounting', () => {
     const done = await call('POST', `/orders/${full.id}/cancel`, ownerA, { version: full.version, reason: 'Customer left' })
     expect(done.body.status).toBe('cancelled')
     expect((await addItem(full.id)).status).toBe(409)
+  })
+})
+
+describe('confirmed orders', () => {
+  const confirmed = async () => {
+    const order = await open()
+    const added = (await addItem(order.body.id)).body
+    const done = await call('POST', `/orders/${order.body.id}/confirm`, cashierA, { version: added.version })
+    expect(done.status).toBe(200)
+    return done.body
+  }
+
+  it('records the confirmation', async () => {
+    expect((await confirmed()).confirmed_at).toBeTruthy()
+  })
+  it('refuses to confirm an empty order', async () => {
+    const order = await open()
+    expect((await call('POST', `/orders/${order.body.id}/confirm`, cashierA, { version: order.body.version })).status).toBe(409)
+  })
+  it('blocks new, changed and removed items', async () => {
+    const order = await confirmed()
+    const line = order.items[0].id
+    expect((await addItem(order.id)).status).toBe(409)
+    expect((await call('PATCH', `/orders/${order.id}/items/${line}`, cashierA, { version: order.version, quantity: '5' })).status).toBe(409)
+    expect((await call('POST', `/orders/${order.id}/items/${line}/void`, ownerA, { version: order.version, reason: 'Try' }, { 'x-branch-id': a.branchId })).status).toBe(409)
+    expect((await call('GET', `/orders/${order.id}`, cashierA)).body.items[0].quantity).toBe('1.000')
+  })
+  it('blocks a service charge added afterwards', async () => {
+    const order = await confirmed()
+    expect((await call('PATCH', `/orders/${order.id}`, cashierA, { version: order.version, serviceChargePercent: '5' })).status).toBe(409)
+  })
+  it('still allows a discount, and the bill reflects it', async () => {
+    const order = await confirmed()
+    const body = { id: crypto.randomUUID(), kind: 'percent', value: '10', reason: 'Regular customer' }
+    const discounted = await call('POST', `/orders/${order.id}/discounts`, ownerA, body, { 'x-branch-id': a.branchId })
+    expect(discounted.status).toBe(201)
+    expect(discounted.body.after_discount).toBe('135.00')
+    const quote = await call('GET', `/orders/${order.id}/quote`, cashierA)
+    expect(quote.body.bill.taxableTotal).toBe('135.00')
+  })
+  it('can still be billed', async () => {
+    const order = await confirmed()
+    const billed = await call('POST', `/orders/${order.id}/finalize`, cashierA, { version: order.version, invoices: [{ id: crypto.randomUUID() }] })
+    expect(billed.status).toBe(201)
+  })
+  it('stops a cashier cancelling a confirmed order', async () => {
+    const order = await confirmed()
+    expect((await call('POST', `/orders/${order.id}/cancel`, cashierA, { version: order.version, reason: 'Left' })).status).toBe(403)
+  })
+})
+
+describe('deleting empty orders', () => {
+  it('needs no reason when nothing was added', async () => {
+    const order = await open()
+    const deleted = await call('POST', `/orders/${order.body.id}/cancel`, cashierA, { version: order.body.version })
+    expect(deleted.status).toBe(200)
+    expect(deleted.body.status).toBe('cancelled')
+    expect((await call('GET', '/orders', cashierA)).body.items.every((item: any) => item.id !== order.body.id)).toBe(true)
+  })
+  it('still needs a reason once there are items', async () => {
+    const order = (await addItem((await open()).body.id)).body
+    const result = await call('POST', `/orders/${order.id}/cancel`, ownerA, { version: order.version }, { 'x-branch-id': a.branchId })
+    expect(result.status).toBe(422)
+    expect(result.body.code).toBe('reason_required')
   })
 })
 

@@ -112,6 +112,10 @@ afterAll(async () => {
 })
 
 describe('recording payments', () => {
+  it('lists methods with cash first, then UPI, card and bank', async () => {
+    const { items } = (await call('GET', '/payment-methods', cashier)).body
+    expect(items.map((method: any) => method.kind)).toEqual(['cash', 'upi', 'card', 'bank_transfer'])
+  })
   it('clears a ₹1,000 bill with UPI and card', async () => {
     const id = await invoice()
     expect((await pay(id, 'upi', '700')).status).toBe(201)
