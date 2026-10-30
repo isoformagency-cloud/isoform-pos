@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { dbContext, requires, session, type Env } from '../../platform/context'
-import { tx } from '../../platform/db'
-import { AppError, forbidden } from '../../platform/errors'
+import { dbContext, requires, session, type Env } from '../../platform/context.js'
+import { tx } from '../../platform/db.js'
+import { AppError, forbidden } from '../../platform/errors.js'
 
 export const reports = new Hono<Env>()
 reports.use(session)

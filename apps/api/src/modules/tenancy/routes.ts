@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { audit, command, dbContext, readBody, requires, session, type Env } from '../../platform/context'
-import { tx } from '../../platform/db'
-import { forbidden, notFound } from '../../platform/errors'
+import { audit, command, dbContext, readBody, requires, session, type Env } from '../../platform/context.js'
+import { tx } from '../../platform/db.js'
+import { forbidden, notFound } from '../../platform/errors.js'
 
 export const tenancy = new Hono<Env>()
 tenancy.use(session)

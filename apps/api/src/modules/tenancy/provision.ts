@@ -1,5 +1,5 @@
 import pg from 'pg'
-import { supabaseAdmin } from '../../platform/supabase'
+import { supabaseAdmin } from '../../platform/supabase.js'
 
 export interface NewBusiness {
   displayName: string

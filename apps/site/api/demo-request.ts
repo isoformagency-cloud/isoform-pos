@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { validateDemoRequest } from '../src/lib/demo-request.js'
 
 const MAX_BYTES = 4096
@@ -25,6 +26,17 @@ export async function POST(request: Request) {
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return json(503, { code: 'not_configured' })
+
+  const ip = request.headers.get('x-real-ip')
+  if (ip) {
+    const visitor = createHash('sha256').update(ip).digest('hex').slice(0, 32)
+    const check = await fetch(`${url}/rest/v1/rpc/allow_demo_request`, {
+      method: 'POST',
+      headers: { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ visitor }),
+    }).catch(() => null)
+    if (check?.ok && (await check.json()) === false) return json(429, { code: 'too_many_requests' })
+  }
 
   const saved = await fetch(`${url}/rest/v1/demo_requests`, {
     method: 'POST',

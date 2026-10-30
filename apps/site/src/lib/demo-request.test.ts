@@ -72,6 +72,19 @@ describe('POST /api/demo-request', () => {
     expect(saved).not.toHaveProperty('website')
   })
 
+  it('turns away a visitor over the hourly limit, and stores no address', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://db.test')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'server-only')
+    const fetcher = vi.fn().mockResolvedValue(new Response('false', { status: 200 }))
+    vi.stubGlobal('fetch', fetcher)
+    const response = await POST(new Request('http://test/api/demo-request', {
+      method: 'POST', headers: { 'x-real-ip': '203.0.113.9' }, body: JSON.stringify(valid),
+    }))
+    expect(response.status).toBe(429)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher.mock.calls[0][1].body).not.toContain('203.0.113.9')
+  })
+
   it('reports a failure when the database rejects the save', async () => {
     vi.stubEnv('SUPABASE_URL', 'https://db.test')
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'server-only')

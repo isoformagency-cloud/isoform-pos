@@ -1,4 +1,5 @@
 import pg from 'pg'
+import { DATABASE_CA } from './database-ca.js'
 
 export interface DbContext {
   tenantId?: string
@@ -10,7 +11,8 @@ export interface DbContext {
 // Small pool: each serverless instance shares Supabase's transaction pooler.
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL_API,
-  ssl: { rejectUnauthorized: false },
+  // Verifies it really is our database, so traffic cannot be intercepted.
+  ssl: { ca: DATABASE_CA, rejectUnauthorized: true },
   max: 3,
   // Reusing a connection takes 60 ms. Opening one takes 500 ms and sometimes stalls.
   idleTimeoutMillis: 120000,

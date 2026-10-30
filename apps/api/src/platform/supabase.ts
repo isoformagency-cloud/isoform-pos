@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
-import { AppError } from './errors'
+import { AppError } from './errors.js'
 
 const url = process.env.SUPABASE_URL!
 const options = { auth: { persistSession: false, autoRefreshToken: false } }

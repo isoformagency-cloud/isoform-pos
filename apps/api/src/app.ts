@@ -1,18 +1,26 @@
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
+import { secureHeaders } from 'hono/secure-headers'
 import { z } from 'zod'
-import type { Env } from './platform/context'
-import { isConnectionError } from './platform/db'
-import { AppError } from './platform/errors'
-import { billing } from './modules/billing/routes'
-import { cash } from './modules/cash/routes'
-import { identity, pinLogin } from './modules/identity/routes'
-import { menu } from './modules/menu/routes'
-import { orders } from './modules/orders/routes'
-import { payments } from './modules/payments/routes'
-import { reports } from './modules/reports/routes'
-import { tenancy } from './modules/tenancy/routes'
+import type { Env } from './platform/context.js'
+import { isConnectionError } from './platform/db.js'
+import { AppError } from './platform/errors.js'
+import { billing } from './modules/billing/routes.js'
+import { cash } from './modules/cash/routes.js'
+import { identity, pinLogin } from './modules/identity/routes.js'
+import { menu } from './modules/menu/routes.js'
+import { orders } from './modules/orders/routes.js'
+import { payments } from './modules/payments/routes.js'
+import { reports } from './modules/reports/routes.js'
+import { tenancy } from './modules/tenancy/routes.js'
 
 export const app = new Hono<Env>().basePath('/api/v1')
+
+app.use(secureHeaders())
+app.use(bodyLimit({
+  maxSize: 64 * 1024,
+  onError: (c) => c.json({ code: 'too_large', message: 'That request is too large.' }, 413),
+}))
 
 app.get('/health', (c) => c.json({ ok: true }))
 app.route('/', pinLogin)

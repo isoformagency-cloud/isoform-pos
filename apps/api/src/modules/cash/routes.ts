@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { audit, command, dbContext, readBody, requires, requiresAny, session, type Actor, type Env } from '../../platform/context'
-import { tx, type Db } from '../../platform/db'
-import { AppError, notFound } from '../../platform/errors'
-import { can } from '../../platform/permissions'
-import { paise } from '../billing/calculate'
+import { audit, command, dbContext, readBody, requires, requiresAny, session, type Actor, type Env } from '../../platform/context.js'
+import { tx, type Db } from '../../platform/db.js'
+import { AppError, notFound } from '../../platform/errors.js'
+import { can } from '../../platform/permissions.js'
+import { paise } from '../billing/calculate.js'
 
 export const cash = new Hono<Env>()
 cash.use(session)

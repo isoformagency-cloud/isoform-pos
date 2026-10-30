@@ -1,10 +1,10 @@
 // Billing tests against the real Supabase project. Removes everything it creates.
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { request } from './testing'
-import { provisionBusiness } from './modules/tenancy/provision'
-import { closeDb } from './platform/db'
-import { createSession, supabaseAdmin } from './platform/supabase'
+import { request } from './testing.js'
+import { provisionBusiness } from './modules/tenancy/provision.js'
+import { closeDb } from './platform/db.js'
+import { createSession, supabaseAdmin } from './platform/supabase.js'
 
 const run = crypto.randomUUID().slice(0, 8)
 const emailFor = (label: string) => `billing-${label}-${run}@staff.isoform.invalid`

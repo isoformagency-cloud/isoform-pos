@@ -1,6 +1,6 @@
 // Hand-checked figures. These run in milliseconds with no database.
 import { describe, expect, it } from 'vitest'
-import { calculateBills, financialYear, paise, rupees, type BillPiece, type BillSettings } from './modules/billing/calculate'
+import { calculateBills, financialYear, paise, rupees, type BillPiece, type BillSettings } from './modules/billing/calculate.js'
 
 const gst5 = { cgst: '2.5', sgst: '2.5', igst: '0', cess: '0' }
 const gst18 = { cgst: '9', sgst: '9', igst: '0', cess: '0' }

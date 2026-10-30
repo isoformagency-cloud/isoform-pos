@@ -2,11 +2,12 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { hash, verify } from '@node-rs/argon2'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { audit, command, dbContext, readBody, requires, session, type Actor, type Env } from '../../platform/context'
-import { tx, type Db } from '../../platform/db'
-import { AppError, forbidden, notFound } from '../../platform/errors'
-import { can, permissionsFor, PIN_ROLES, type Role } from '../../platform/permissions'
-import { createSession, supabaseAdmin } from '../../platform/supabase'
+import { audit, command, dbContext, readBody, requires, session, type Actor, type Env } from '../../platform/context.js'
+import { tx, type Db } from '../../platform/db.js'
+import { AppError, forbidden, notFound } from '../../platform/errors.js'
+import { can, permissionsFor, PIN_ROLES, type Role } from '../../platform/permissions.js'
+import { limit } from '../../platform/rate-limit.js'
+import { createSession, supabaseAdmin } from '../../platform/supabase.js'
 
 const MAX_PIN_ATTEMPTS = 5
 const pinFormat = z.string().regex(/^\d{4,6}$/)
@@ -26,7 +27,7 @@ const pinRequest = z.strictObject({
 })
 
 /** Names for the PIN screen. Without a valid device credential it reveals nothing. */
-pinLogin.post('/auth/device-staff', async (c) => {
+pinLogin.post('/auth/device-staff', limit('device-staff', 30, 60), async (c) => {
   const { deviceCredential } = await readBody(c, z.strictObject({ deviceCredential: z.string().max(300) }))
   const refused = new AppError(401, 'device_refused', 'This device is not registered.')
   const [tenantId, branchId, deviceId, secret] = deviceCredential.split('.')
@@ -47,7 +48,7 @@ pinLogin.post('/auth/device-staff', async (c) => {
   return c.json({ items })
 })
 
-pinLogin.post('/auth/pin-login', async (c) => {
+pinLogin.post('/auth/pin-login', limit('pin-login', 30, 60), async (c) => {
   const input = await readBody(c, pinRequest)
   const refused = new AppError(401, 'pin_refused', 'That PIN was not accepted.')
 

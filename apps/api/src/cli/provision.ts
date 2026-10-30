@@ -1,6 +1,6 @@
 // Activates an approved business. Run: npm run provision -w @isoform/api -- ./business.json
 import { readFileSync } from 'node:fs'
-import { provisionBusiness } from '../modules/tenancy/provision'
+import { provisionBusiness } from '../modules/tenancy/provision.js'
 
 const file = process.argv[2]
 if (!file) throw new Error('Pass the path to a JSON file describing the business.')

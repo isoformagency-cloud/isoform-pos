@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
 import type { Context, MiddlewareHandler } from 'hono'
 import { z } from 'zod'
-import { tx, type Db, type DbContext } from './db'
-import { AppError, forbidden } from './errors'
-import { can, type Permission, type Role } from './permissions'
-import { verifyToken } from './supabase'
+import { tx, type Db, type DbContext } from './db.js'
+import { AppError, forbidden } from './errors.js'
+import { can, type Permission, type Role } from './permissions.js'
+import { verifyToken } from './supabase.js'
 
 export interface Actor {
   userId: string

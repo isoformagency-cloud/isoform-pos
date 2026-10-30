@@ -100,3 +100,7 @@ Known limits: pending payments are in the database but have no API or POS flow. 
 Built: net sales, tax, payments recorded and confirmed, amount awaiting checks, amount still owed, refunds, tips, orders, payments by method, top items, tax by rate, cash sessions and branch totals, for up to 92 trading days. No profit figure is shown. Tests: 153 API tests with 1 failure on the last full run, in staff creation. That failure was traced to Supabase Auth being unreachable (status 0), now returned as a retryable 503. The foundation test file then passed 28 of 28. The full suite has not been rerun since that one-line change.
 
 The pilot core (registration through reports) is complete locally. Top items and tax by rate are before credit notes. Reports run live queries, with no summary tables. Rate limiting, certificate pinning, custom SMTP, a staging project and deployment remain before real use.
+
+## Launch preparation
+
+Added: database-backed request limits, 64 KB request limit, security headers, strict database certificate verification with the Supabase root pinned, file extensions on API imports so compiled code runs on plain Node, and Vercel files for the POS and API. A compiled copy of the API was loaded and answered /health. Last full API run with these changes: 157 of 158. The one failure was a wrong test expectation, corrected, and that file was rerun. Not yet tested on Vercel: the function entry, rewrites, x-real-ip, and speed from Mumbai. Launch steps are in docs/05-launch.md.

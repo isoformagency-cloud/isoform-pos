@@ -1,4 +1,4 @@
-import { app } from './app'
+import { app } from './app.js'
 
 /**
  * Sends a request the way the POS does: a temporary 503 is retried with the same
