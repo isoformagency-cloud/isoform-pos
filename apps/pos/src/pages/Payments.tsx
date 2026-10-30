@@ -97,7 +97,7 @@ export function Payments({ me }: { me: Me }) {
               <button className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-paper-soft" aria-expanded={openId === item.id} onClick={() => setOpenId(openId === item.id ? null : item.id)}>
                 <span>
                   <span className="font-medium">{item.method_name}</span>
-                  <span className="block text-sm text-ink-soft">{item.reference ?? 'No reference'} · {item.recorded_by_name}</span>
+                  <span className="block text-sm text-ink-soft">{item.reference ? `${item.reference} · ` : ''}{item.recorded_by_name}</span>
                 </span>
                 <span className="text-right">
                   <span className="font-mono">{money(item.amount)}</span>

@@ -130,9 +130,16 @@ describe('recording payments', () => {
     expect(result.status).toBe(409)
     expect((await db.query(`select 1 from app.payments where id = $1`, [payment])).rowCount).toBe(0)
   })
-  it('requires a reference where the method needs one', async () => {
+  it('saves UPI and card payments without a reference', async () => {
     const id = await invoice()
-    expect((await pay(id, 'upi', '100', { reference: undefined })).status).toBe(422)
+    expect((await pay(id, 'upi', '500', { reference: undefined })).status).toBe(201)
+    expect((await pay(id, 'card', '500', { reference: undefined })).status).toBe(201)
+    expect(await balance(id)).toBe('0.00')
+  })
+  it('still requires a reference if a method is set to need one', async () => {
+    await db.query(`update app.payment_methods set requires_reference = true where id = $1`, [methods.upi])
+    expect((await pay(await invoice(), 'upi', '100', { reference: undefined })).status).toBe(422)
+    await db.query(`update app.payment_methods set requires_reference = false where id = $1`, [methods.upi])
   })
   it('refuses a transaction reference used twice', async () => {
     const reference = `DUP-${run}`
