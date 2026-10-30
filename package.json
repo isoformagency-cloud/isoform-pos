@@ -1,0 +1,17 @@
+{
+  "name": "isoform-pos",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:site": "npm run dev -w @isoform/site",
+    "build:site": "npm run build -w @isoform/site",
+    "test": "npm run test -w @isoform/site",
+    "verify:schema": "node docs/schema/verify-schema.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.13",
+    "pg": "^8.23.1"
+  }
+}
