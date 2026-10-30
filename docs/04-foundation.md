@@ -104,3 +104,7 @@ The pilot core (registration through reports) is complete locally. Top items and
 ## Launch preparation
 
 Added: database-backed request limits, 64 KB request limit, security headers, strict database certificate verification with the Supabase root pinned, file extensions on API imports so compiled code runs on plain Node, and Vercel files for the POS and API. A compiled copy of the API was loaded and answered /health. Last full API run with these changes: 157 of 158. The one failure was a wrong test expectation, corrected, and that file was rerun. Not yet tested on Vercel: the function entry, rewrites, x-real-ip, and speed from Mumbai. Launch steps are in docs/05-launch.md.
+
+## Change after first live use (31 October 2026)
+
+The owner found the second-person rule a waste of time. It is now off by default. Owners, managers and accountants can confirm their own payments and review their own cash sessions, and cashiers still cannot confirm at all. Each action still records who did it. Businesses can turn on two-person checks in Settings. Payments also has a Confirm all button.

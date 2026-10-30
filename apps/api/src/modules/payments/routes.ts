@@ -251,6 +251,29 @@ payments.post('/payments/:id/confirm', requires('payments.verify'), async (c) =>
   return command(c, 200, (db, actor) => changeStatus(db, actor, id, 'confirmed'))
 })
 
+const confirmAll = z.strictObject({ ids: z.array(z.uuid()).min(1).max(200) })
+
+/** Clears the day's list in one step. Payments already handled are skipped, not failed. */
+payments.post('/payments/confirm-all', requires('payments.verify'), async (c) => {
+  const input = await readBody(c, confirmAll)
+  return command(c, 200, async (db, actor) => {
+    const { rows: [tenant] } = await db.query(`select allow_self_verification from app.tenants where id = $1`, [actor.tenantId])
+    let confirmed = 0
+    let skipped = 0
+    for (const id of [...new Set(input.ids)].sort()) {
+      const { rows: [payment] } = await db.query(`select status, recorded_by from app.payments where id = $1`, [id])
+      const ownBlocked = payment?.recorded_by === actor.membershipId && !tenant.allow_self_verification
+      if (payment?.status !== 'recorded' || ownBlocked) {
+        skipped += 1
+        continue
+      }
+      await changeStatus(db, actor, id, 'confirmed')
+      confirmed += 1
+    }
+    return { confirmed, skipped }
+  })
+})
+
 payments.post('/payments/:id/fail', requires('payments.verify'), async (c) => {
   const id = uuidParam(c.req.param('id'))
   const input = await readBody(c, withReason)
