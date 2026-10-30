@@ -108,3 +108,5 @@ Added: database-backed request limits, 64 KB request limit, security headers, st
 ## Change after first live use (31 October 2026)
 
 The owner found the second-person rule a waste of time. It is now off by default. Owners, managers and accountants can confirm their own payments and review their own cash sessions, and cashiers still cannot confirm at all. Each action still records who did it. Businesses can turn on two-person checks in Settings. Payments also has a Confirm all button.
+
+Transaction references are also optional by default after first live use. The payment form hides the field behind "Add reference". Without a reference, duplicate detection relies on the idempotency key, so the same customer payment entered twice on purpose cannot be caught, and verification depends on matching amounts.

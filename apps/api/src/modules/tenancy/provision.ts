@@ -16,9 +16,9 @@ export interface NewBusiness {
 
 const DEFAULT_METHODS = [
   ['Cash', 'cash', false],
-  ['UPI', 'upi', true],
-  ['Card', 'card', true],
-  ['Bank transfer', 'bank_transfer', true],
+  ['UPI', 'upi', false],
+  ['Card', 'card', false],
+  ['Bank transfer', 'bank_transfer', false],
 ] as const
 
 /**

@@ -131,7 +131,10 @@ export function InvoiceDetail({ me }: { me: Me }) {
                   </select>
                 </label>
                 <label className="field">Amount<input name="amount" inputMode="decimal" defaultValue={data.outstanding} required /></label>
-                <label className="field sm:col-span-2">Transaction reference<input name="reference" autoComplete="off" /></label>
+                <details className="text-sm text-ink-soft sm:col-span-2">
+                  <summary className="min-h-8 cursor-pointer">Add reference (optional)</summary>
+                  <label className="field mt-1">Transaction reference<input name="reference" autoComplete="off" /></label>
+                </details>
                 {record.error && <div className="sm:col-span-2"><Notice>{record.error.message}</Notice></div>}
                 <button className="btn btn-primary sm:col-span-2" disabled={record.isPending}>{record.isPending ? 'Saving…' : 'Record payment'}</button>
                 <p className="text-xs text-ink-soft sm:col-span-2">This records money you’ve already received. It doesn’t take a payment.</p>
