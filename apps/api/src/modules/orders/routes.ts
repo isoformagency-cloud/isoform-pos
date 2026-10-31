@@ -259,7 +259,7 @@ orders.get('/orders/:id/timeline', requires('orders.read'), async (c) => {
       if (round.ready_at) timeline.push({ at: round.ready_at, label: `Ready${label}`, by: null })
       if (round.completed_at) timeline.push({ at: round.completed_at, label: `Served${label}`, by: null })
     }
-    if (can(actor.role, 'billing.read')) {
+    if (can(actor, 'billing.read')) {
       const { rows: bills } = await db.query(
         `select n.number, n.grand_total::text, n.issued_at, m.display_name from app.invoices n
            join app.memberships m on m.id = n.issued_by where n.order_id = $1`,
@@ -267,7 +267,7 @@ orders.get('/orders/:id/timeline', requires('orders.read'), async (c) => {
       )
       for (const bill of bills) timeline.push({ at: bill.issued_at, label: `Bill ${bill.number} issued for ₹${bill.grand_total}`, by: bill.display_name })
     }
-    if (can(actor.role, 'payments.read')) {
+    if (can(actor, 'payments.read')) {
       const { rows: paid } = await db.query(
         `select distinct on (p.id) p.received_at, p.amount::text, k.name as method, m.display_name
            from app.payments p
@@ -289,6 +289,8 @@ orders.post('/orders', requires('orders.write'), async (c) => {
   const input = await readBody(c, newOrder)
   const branchId = workingBranch(c.get('actor'))
   return command(c, 201, async (db, actor) => {
+    const { rows: [{ order_types }] } = await db.query(`select order_types from app.tenants where id = $1`, [actor.tenantId])
+    if (!order_types.includes(input.orderType)) throw new AppError(409, 'order_type_off', 'This order type is turned off in Settings.')
     const { rows: [{ business_date }] } = await db.query(
       `select ((now() at time zone timezone) - day_cutoff::interval)::date::text as business_date from app.branches where id = $1`,
       [branchId],
@@ -426,7 +428,7 @@ orders.post('/orders/:id/items/:itemId/void', requires('orders.write'), async (c
   return command(c, 200, async (db, actor) => {
     await touch(db, orderId, input.version)
     const { rows: [sent] } = await db.query(`select 1 as yes from app.kitchen_ticket_items where order_item_id = $1`, [itemId])
-    if (sent && !can(actor.role, 'orders.cancel')) {
+    if (sent && !can(actor, 'orders.cancel')) {
       throw new AppError(403, 'manager_needed', 'This item has gone to the kitchen. Ask a manager to remove it.')
     }
     const { rowCount } = await db.query(
@@ -482,7 +484,7 @@ orders.post('/orders/:id/cancel', requires('orders.write'), async (c) => {
       [id],
     )
     // Deleting an empty order is routine. Cancelling one with items needs authority and a reason.
-    if (active > 0 && !can(actor.role, 'orders.cancel')) throw forbidden()
+    if (active > 0 && !can(actor, 'orders.cancel')) throw forbidden()
     if (active > 0 && !input.reason) throw new AppError(422, 'reason_required', 'Give a reason for cancelling this order.')
     const cancelReason = input.reason ?? 'Empty order'
     const { rowCount } = await db.query(

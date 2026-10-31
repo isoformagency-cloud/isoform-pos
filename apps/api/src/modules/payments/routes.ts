@@ -178,6 +178,28 @@ payments.get('/payment-methods', requires('payments.read'), async (c) => {
   return c.json({ items })
 })
 
+payments.get('/payment-methods/all', requires('business.read'), async (c) => {
+  const items = await tx(dbContext(c.get('actor')), async (db) => {
+    const { rows } = await db.query(`select id, name, kind, is_active from app.payment_methods
+        order by array_position(array['cash', 'upi', 'card', 'bank_transfer', 'other'], kind), name`)
+    return rows
+  })
+  return c.json({ items })
+})
+
+payments.patch('/payment-methods/:id', requires('business.write'), async (c) => {
+  const id = z.uuid().parse(c.req.param('id'))
+  const input = await readBody(c, z.strictObject({ isActive: z.boolean() }))
+  return command(c, 200, async (db, actor) => {
+    const { rows: [row] } = await db.query(`update app.payment_methods set is_active = $2 where id = $1 returning id, name, is_active`, [id, input.isActive])
+    if (!row) throw notFound('Payment method')
+    const { rows: [{ left }] } = await db.query(`select count(*)::int as left from app.payment_methods where is_active`)
+    if (left === 0) throw new AppError(409, 'last_payment_method', 'Keep at least one payment method turned on.')
+    await audit(db, actor, 'payment_method.updated', 'payment_method', id, input)
+    return row
+  })
+})
+
 payments.get('/payments', requires('payments.read'), async (c) => {
   const actor = c.get('actor')
   const status = z.enum(['pending', 'recorded', 'confirmed', 'failed', 'voided']).optional().parse(c.req.query('status'))

@@ -164,7 +164,7 @@ inventory.post('/inventory/items/:id/moves', requires('inventory.write'), async 
     const unitCost = input.kind === 'in' ? input.unitCost : undefined
     let expenseId: string | null = null
     if (input.kind === 'in' && input.expense) {
-      if (!can(actor.role, 'expenses.write')) throw new AppError(403, 'forbidden', 'You do not have permission to do this.')
+      if (!can(actor, 'expenses.write')) throw new AppError(403, 'forbidden', 'You do not have permission to do this.')
       const total = Number(input.quantity) * Number(unitCost ?? current.cost)
       if (total <= 0) throw new AppError(422, 'cost_required', 'Enter a cost to record this as an expense.')
       await recordExpense(db, actor, branchId, {

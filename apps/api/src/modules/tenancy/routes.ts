@@ -20,6 +20,11 @@ const settings = z.strictObject({
   cashierDiscountLimit: z.number().min(0).max(100).optional(),
   usesKitchen: z.boolean().optional(),
   kitchenDelayMinutes: z.number().int().min(1).max(240).optional(),
+  orderTypes: z.array(z.enum(['dine_in', 'takeaway', 'delivery', 'aggregator'])).min(1).max(4).optional(),
+  defaultSeats: z.number().int().min(1).max(100).optional(),
+  showItemPhotos: z.boolean().optional(),
+  showFoodMarks: z.boolean().optional(),
+  mutedAlerts: z.array(z.enum(['kitchenDelayed', 'lowStock', 'paymentIssues', 'paymentsToVerify', 'unpaidBills', 'heldOrders', 'leftoverOrders'])).max(7).optional(),
 })
 
 const newBranch = z.strictObject({
@@ -44,7 +49,7 @@ tenancy.get('/business', requires('business.read'), async (c) => {
     const { rows } = await db.query(
       `select id, display_name, logo_path, currency, rounding_rule, prices_include_tax, allow_self_verification,
               upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text,
-              uses_kitchen, kitchen_delay_minutes
+              uses_kitchen, kitchen_delay_minutes, order_types, default_seats, show_item_photos, show_food_marks, muted_alerts
          from app.tenants where id = $1`,
       [actor.tenantId],
     )
@@ -69,12 +74,18 @@ tenancy.patch('/business', requires('business.write'), async (c) => {
          discount_presets = coalesce($10, discount_presets),
          cashier_discount_limit = coalesce($11, cashier_discount_limit),
          uses_kitchen = coalesce($12, uses_kitchen),
-         kitchen_delay_minutes = coalesce($13, kitchen_delay_minutes)
+         kitchen_delay_minutes = coalesce($13, kitchen_delay_minutes),
+         order_types = coalesce($14, order_types),
+         default_seats = coalesce($15, default_seats),
+         show_item_photos = coalesce($16, show_item_photos),
+         show_food_marks = coalesce($17, show_food_marks),
+         muted_alerts = coalesce($18, muted_alerts)
        where id = $1 returning id, display_name, rounding_rule, prices_include_tax, allow_self_verification,
-         upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text, uses_kitchen, kitchen_delay_minutes`,
+         upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text, uses_kitchen, kitchen_delay_minutes,
+         order_types, default_seats, show_item_photos, show_food_marks, muted_alerts`,
       [actor.tenantId, input.displayName, input.roundingRule, input.pricesIncludeTax, input.allowSelfVerification,
         input.upiId, input.fssaiNumber, input.billFooter, input.billFormat, input.discountPresets, input.cashierDiscountLimit,
-        input.usesKitchen, input.kitchenDelayMinutes],
+        input.usesKitchen, input.kitchenDelayMinutes, input.orderTypes, input.defaultSeats, input.showItemPhotos, input.showFoodMarks, input.mutedAlerts],
     )
     await audit(db, actor, 'business.updated', 'tenant', actor.tenantId, input)
     return rows[0]

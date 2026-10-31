@@ -13,7 +13,7 @@ workspace.get('/pos-settings', async (c) => {
   const settings = await tx(dbContext(actor), async (db) => {
     const { rows: [row] } = await db.query(
       `select display_name, upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text,
-              uses_kitchen, kitchen_delay_minutes
+              uses_kitchen, kitchen_delay_minutes, order_types, default_seats, show_item_photos, show_food_marks, muted_alerts
          from app.tenants where id = $1`,
       [actor.tenantId],
     )
@@ -31,7 +31,7 @@ workspace.get('/search', async (c) => {
 
   const results = await tx(dbContext(actor), async (db) => {
     const found: Record<string, unknown[]> = {}
-    if (can(actor.role, 'orders.read')) {
+    if (can(actor, 'orders.read')) {
       const { rows } = await db.query(
         `select o.id, o.display_number, o.order_type, o.status, o.table_label, o.business_date::text, c.name as customer_name
            from app.orders o left join app.customers c on c.id = o.customer_id
@@ -42,7 +42,7 @@ workspace.get('/search', async (c) => {
       )
       found.orders = rows
     }
-    if (can(actor.role, 'billing.read')) {
+    if (can(actor, 'billing.read')) {
       const { rows } = await db.query(
         `select n.id, n.number, n.grand_total::text, n.invoice_date::text from app.invoices n
           where n.branch_id = any($1::uuid[]) and n.number ilike $2 order by n.issued_at desc limit 6`,
@@ -50,14 +50,14 @@ workspace.get('/search', async (c) => {
       )
       found.bills = rows
     }
-    if (can(actor.role, 'customers.read')) {
+    if (can(actor, 'customers.read')) {
       const { rows } = await db.query(
         `select id, name, phone from app.customers where name ilike $1 or phone like $1 order by name limit 6`,
         [like],
       )
       found.customers = rows
     }
-    if (can(actor.role, 'menu.read')) {
+    if (can(actor, 'menu.read')) {
       const { rows } = await db.query(
         `select p.id, p.name, c.name as category from app.products p join app.categories c on c.id = p.category_id
           where p.name ilike $1 and p.is_active order by p.name limit 6`,
@@ -65,14 +65,14 @@ workspace.get('/search', async (c) => {
       )
       found.menu = rows
     }
-    if (can(actor.role, 'inventory.read')) {
+    if (can(actor, 'inventory.read')) {
       const { rows } = await db.query(
         `select id, name, category from app.stock_items where name ilike $1 and is_active order by name limit 6`,
         [like],
       )
       found.stock = rows
     }
-    if (can(actor.role, 'staff.read')) {
+    if (can(actor, 'staff.read')) {
       const { rows } = await db.query(
         `select id, display_name, role from app.memberships where display_name ilike $1 and status = 'active' order by display_name limit 6`,
         [like],
@@ -96,13 +96,13 @@ workspace.get('/alerts', async (c) => {
         where o.status = 'open' and o.branch_id = any($1::uuid[])`,
       [actor.branchIds],
     )
-    const counts = { runningOrders: 0, heldOrders: 0, leftoverOrders: 0, unpaidBills: 0, paymentsToVerify: 0, kitchenActive: 0, kitchenDelayed: 0, lowStock: 0 }
-    if (can(actor.role, 'orders.read')) {
+    const counts = { runningOrders: 0, heldOrders: 0, leftoverOrders: 0, unpaidBills: 0, paymentsToVerify: 0, kitchenActive: 0, kitchenDelayed: 0, lowStock: 0, paymentIssues: 0 }
+    if (can(actor, 'orders.read')) {
       counts.runningOrders = orders.running
       counts.heldOrders = orders.held
       counts.leftoverOrders = orders.leftover
     }
-    if (can(actor.role, 'inventory.read')) {
+    if (can(actor, 'inventory.read')) {
       // Low or out in any branch this person works in.
       const { rows: [row] } = await db.query(
         `select count(*)::int as low from app.stock_items s
@@ -113,7 +113,7 @@ workspace.get('/alerts', async (c) => {
       )
       counts.lowStock = row.low
     }
-    if (can(actor.role, 'kitchen.read')) {
+    if (can(actor, 'kitchen.read')) {
       const { rows: [row] } = await db.query(
         `select count(*)::int as active,
                 count(*) filter (where k.status in ('new', 'preparing')
@@ -125,7 +125,7 @@ workspace.get('/alerts', async (c) => {
       counts.kitchenActive = row.active
       counts.kitchenDelayed = row.delayed
     }
-    if (can(actor.role, 'billing.read')) {
+    if (can(actor, 'billing.read')) {
       const { rows: [row] } = await db.query(
         `select count(*)::int as unpaid from app.invoices n join app.invoice_balances b on b.invoice_id = n.id
           where n.branch_id = any($1::uuid[]) and b.outstanding > 0`,
@@ -133,12 +133,23 @@ workspace.get('/alerts', async (c) => {
       )
       counts.unpaidBills = row.unpaid
     }
-    if (can(actor.role, 'payments.verify')) {
+    if (can(actor, 'payments.verify')) {
       const { rows: [row] } = await db.query(
         `select count(*)::int as waiting from app.payments where branch_id = any($1::uuid[]) and status = 'recorded'`,
         [actor.branchIds],
       )
       counts.paymentsToVerify = row.waiting
+    }
+    if (can(actor, 'payments.read')) {
+      // Failed in the last two days, or a drawer that closed short and still needs a review.
+      const { rows: [row] } = await db.query(
+        `select (select count(*)::int from app.payments
+                  where branch_id = any($1::uuid[]) and status = 'failed' and business_date >= current_date - 1)
+               + (select count(*)::int from app.cash_sessions
+                  where branch_id = any($1::uuid[]) and status = 'closed' and variance < 0) as issues`,
+        [actor.branchIds],
+      )
+      counts.paymentIssues = row.issues
     }
     return counts
   })

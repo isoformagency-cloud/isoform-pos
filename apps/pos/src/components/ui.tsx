@@ -131,6 +131,19 @@ export function Modal({ title, text, side = false, onClose, footer, children }: 
   )
 }
 
+const FOOD_COLOUR: Record<string, string> = { veg: 'border-ok text-ok', non_veg: 'border-bad text-bad', egg: 'border-wait text-wait' }
+const FOOD_NAME: Record<string, string> = { veg: 'Vegetarian', non_veg: 'Non-vegetarian', egg: 'Contains egg' }
+
+export function FoodMark({ type }: { type: string }) {
+  if (!FOOD_COLOUR[type]) return null
+  return (
+    <span title={FOOD_NAME[type]} className={`grid size-3.5 shrink-0 place-items-center rounded-[3px] border ${FOOD_COLOUR[type]}`}>
+      <span className="size-1.5 rounded-full bg-current" />
+      <span className="sr-only">{FOOD_NAME[type]}</span>
+    </span>
+  )
+}
+
 export function Avatar({ name }: { name: string }) {
   const initials = name.split(/\s+/).map((word) => word[0]).join('').slice(0, 2).toUpperCase()
   return <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-100 text-xs font-semibold text-brand-deep">{initials}</span>

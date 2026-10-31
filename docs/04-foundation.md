@@ -164,5 +164,17 @@ Tests: 262 of 262 API tests in one full run of 36 minutes, down from 50 despite 
 
 Known limits: a recipe can't vary by size.
 
-Live check after deployment: every step of `scripts/check-live.ts` passed, which now covers these pages. A sale with a recipe took 0.5 kg of coffee beans off live stock, and a receipt photo loaded in a browser from the live site while an image from an unlisted address was blocked. From this PC, where the network alone takes about 124 ms, the stock page took a median of 145 ms and listing open orders 141 ms.
+Live check after deployment: all 47 steps of `scripts/check-live.ts` passed, which now covers these pages. A sale with a recipe took 0.5 kg of coffee beans off live stock, and a receipt photo loaded in a browser from the live site while an image from an unlisted address was blocked. From this PC, where the network alone takes about 124 ms, the stock page took a median of 145 ms and listing open orders 141 ms.
 
+
+## Dashboard, reports, menu, staff and setup, stages 9 to 11 (31 October 2026)
+
+Built: a dashboard for today, this week and this month, with comparisons, charts, order types, payments, recent orders, kitchen status, low stock and expenses. Reports with date ranges and comparison to the previous period, covering sales, busiest hours, items, payments, order types, expenses and profit, staff and tax, each with print and CSV export. Item photos and descriptions, duplicating items, ordering categories with icons, menu filters and a screen for linking add-ons. An Admin role, an editable permissions grid, Switch user, an activity log, orders today and last active on the Staff page, payment issue alerts, choosing which alerts show, turning order types and payment methods on or off, default seats, photo and veg mark settings, a backup download, a setup guide and sample data.
+
+Decisions: permissions live in `app.role_permissions`, which stores only changes from a role's defaults, so a better default still reaches every business. They're read on every request with the session, so `can()` now takes the person, not the role. The grid can't grant sensitive actions or reach staff, devices, branches or settings. Backups use a named column list for each section, so a new secret column can't leak into a download, and they page through 1,000 rows at a time because a whole business won't fit in one response. Sample rows carry `is_sample` and are hidden rather than deleted, since a sold sample stays behind its bill. Menu photos are in the public `menu-photos` bucket, 2 MB at most, shrunk to 600 pixels. Run `scripts/create-menu-photos-bucket.mjs` once on any new environment.
+
+Checked on screen: the dashboard and every report tab with real Demo Cafe figures, a photo upload through to the POS, categories, add-ons, the permissions grid, activity log, Staff page, saving Settings and seeing an order type leave the POS, and Switch user reaching the PIN screen. No sideways scroll on Home, Reports, Menu, Permissions, Activity or Settings at 375px, after fixing one on Reports. The photo on a POS card loaded only once lazy loading was removed, so POS and Menu photos now load straight away.
+
+Tests: 309 of 309 API tests in one clean full run of 27 minutes, 47 of them new, and 94 of 94 database rules. Those rule checks don’t yet attack the new permissions table, but the API tests confirm one business’s grid never touches another’s.
+
+Known limits: features 87 to 91 aren't built. Notifications have no saved history. A backup can't be restored from inside the app. Sales less expenses isn't accounting profit. Print was not tested on paper.

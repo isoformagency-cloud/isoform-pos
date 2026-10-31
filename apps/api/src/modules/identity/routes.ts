@@ -5,13 +5,13 @@ import { z } from 'zod'
 import { audit, command, dbContext, readBody, requires, session, type Actor, type Env } from '../../platform/context.js'
 import { tx, type Db } from '../../platform/db.js'
 import { AppError, forbidden, notFound } from '../../platform/errors.js'
-import { can, permissionsFor, PIN_ROLES, type Role } from '../../platform/permissions.js'
+import { can, defaultLevel, EDITABLE_ROLES, MODULES, PIN_ROLES, type Level, type Role } from '../../platform/permissions.js'
 import { limit } from '../../platform/rate-limit.js'
 import { createSession, supabaseAdmin } from '../../platform/supabase.js'
 
 const MAX_PIN_ATTEMPTS = 5
 const pinFormat = z.string().regex(/^\d{4,6}$/)
-const roles = z.enum(['owner', 'manager', 'cashier', 'waiter', 'kitchen', 'accountant'])
+const roles = z.enum(['owner', 'admin', 'manager', 'cashier', 'waiter', 'kitchen', 'accountant'])
 const sha256 = (text: string) => createHash('sha256').update(text).digest()
 
 // ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ identity.get('/me', async (c) => {
     displayName: actor.displayName,
     role: actor.role,
     branchIds: actor.branchIds,
-    permissions: permissionsFor(actor.role),
+    permissions: actor.permissions,
   })
 })
 
@@ -145,9 +145,11 @@ async function loadTarget(db: Db, id: string) {
   return target as { id: string; role: Role; status: string }
 }
 
-/** Managers look after frontline staff. Only an owner can touch owners or managers. */
+/** Managers look after frontline staff, admins look after everyone below them, and owners look after all. */
 const assertCanManage = (actor: Actor, role: Role) => {
-  if (actor.role !== 'owner' && !PIN_ROLES.includes(role)) throw forbidden()
+  if (actor.role === 'owner') return
+  if (actor.role === 'admin' && role !== 'owner' && role !== 'admin') return
+  if (!PIN_ROLES.includes(role)) throw forbidden()
 }
 
 async function assertNotLastOwner(db: Db, target: { id: string; role: Role }) {
@@ -186,15 +188,94 @@ identity.get('/staff', requires('staff.read'), async (c) => {
   const items = await tx(dbContext(actor), async (db) => {
     const { rows } = await db.query(
       `select m.id, m.display_name, m.role, m.status, m.pin_hash is not null as has_pin,
-              coalesce(array_agg(bm.branch_id) filter (where bm.branch_id is not null), '{}') as branch_ids
+              coalesce(array_agg(bm.branch_id) filter (where bm.branch_id is not null), '{}') as branch_ids,
+              coalesce(o.today, 0) as orders_today,
+              greatest(o.latest, (select max(a.created_at) from app.audit_log a
+                                   where a.tenant_id = m.tenant_id and a.actor_membership_id = m.id)) as last_active
          from app.memberships m
          left join app.branch_memberships bm on bm.membership_id = m.id
+         left join lateral (
+           select max(x.created_at) as latest,
+                  count(*) filter (where x.business_date = ((now() at time zone b.timezone) - b.day_cutoff::interval)::date)::int as today
+             from app.orders x join app.branches b on b.id = x.branch_id
+            where x.tenant_id = m.tenant_id and x.created_by = m.id
+         ) o on true
         where m.tenant_id = app.tenant_id() and m.status <> 'removed'
-        group by m.id order by m.created_at`,
+        group by m.id, o.today, o.latest order by m.created_at`,
     )
     return rows
   })
   return c.json({ items })
+})
+
+// ---------------------------------------------------------------------------
+// What each role can do, which an owner can change
+// ---------------------------------------------------------------------------
+
+const roleLevels = z.strictObject({ levels: z.record(z.string().max(30), z.enum(['none', 'view', 'manage'])) })
+
+identity.get('/permissions', requires('permissions.manage'), async (c) => {
+  const saved = await tx(dbContext(c.get('actor')), async (db) => {
+    const { rows } = await db.query(`select role, module, level from app.role_permissions`)
+    return rows as { role: Role; module: string; level: Level }[]
+  })
+  const grid = EDITABLE_ROLES.map((role) => ({
+    role,
+    levels: Object.fromEntries(MODULES.map((module) => [
+      module.key,
+      saved.find((row) => row.role === role && row.module === module.key)?.level ?? defaultLevel(role, module),
+    ])),
+    defaults: Object.fromEntries(MODULES.map((module) => [module.key, defaultLevel(role, module)])),
+  }))
+  return c.json({ modules: MODULES.map(({ key, label, levels }) => ({ key, label, levels })), grid })
+})
+
+identity.put('/permissions/:role', requires('permissions.manage'), async (c) => {
+  const role = z.enum(EDITABLE_ROLES as [Role, ...Role[]]).parse(c.req.param('role'))
+  const input = await readBody(c, roleLevels)
+  for (const [key, level] of Object.entries(input.levels)) {
+    if (!MODULES.find((module) => module.key === key)?.levels.includes(level)) {
+      throw new AppError(422, 'invalid_level', 'That access level isn’t available for this section.')
+    }
+  }
+  return command(c, 200, async (db, actor) => {
+    await db.query(`delete from app.role_permissions where role = $1`, [role])
+    for (const module of MODULES) {
+      const level = input.levels[module.key]
+      if (!level || level === defaultLevel(role, module)) continue
+      await db.query(`insert into app.role_permissions (tenant_id, role, module, level) values ($1, $2, $3, $4)`, [actor.tenantId, role, module.key, level])
+    }
+    await audit(db, actor, 'permissions.updated', 'tenant', actor.tenantId, { role, levels: input.levels })
+    return { role, levels: input.levels }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Activity log
+// ---------------------------------------------------------------------------
+
+const ACTIVITY_GROUPS: Record<string, string> = {
+  discounts: `a.action like 'order.discount%'`,
+  cancellations: `a.action in ('order.cancelled', 'order_item.voided', 'credit_note.issued', 'expense.voided', 'refund.recorded', 'refund.voided')`,
+  stock: `a.action like 'stock_item.%' or a.action = 'recipe.updated'`,
+  menu: `a.action like 'product.%' or a.action like 'variant.%' or a.action like 'addon.%' or a.action like 'category.%' or a.action like 'tax_rate.%'`,
+  staff: `a.action like 'staff.%' or a.action like 'device.%' or a.action = 'permissions.updated'`,
+}
+
+identity.get('/activity', requires('activity.read'), async (c) => {
+  const group = z.enum(['all', ...Object.keys(ACTIVITY_GROUPS)]).default('all').parse(c.req.query('group'))
+  const offset = z.coerce.number().int().min(0).default(0).parse(c.req.query('offset'))
+  const items = await tx(dbContext(c.get('actor')), async (db) => {
+    const { rows } = await db.query(
+      `select a.id, a.action, a.entity_type, a.entity_id, a.after_data, a.created_at, m.display_name as actor_name
+         from app.audit_log a left join app.memberships m on m.id = a.actor_membership_id
+        where ${group === 'all' ? 'true' : `(${ACTIVITY_GROUPS[group]})`}
+        order by a.created_at desc limit 50 offset $1`,
+      [offset],
+    )
+    return rows
+  })
+  return c.json({ items, nextOffset: items.length === 50 ? offset + 50 : null })
 })
 
 identity.post('/staff', requires('staff.write'), async (c) => {
@@ -325,7 +406,7 @@ identity.post('/staff/:id/unlock', requires('staff.write'), async (c) => {
   await readBody(c, z.strictObject({}))
   return command(c, 200, async (db, actor) => {
     const target = await loadTarget(db, id)
-    if (!can(actor.role, 'staff.write')) throw forbidden()
+    if (!can(actor, 'staff.write')) throw forbidden()
     assertCanManage(actor, target.role)
     await db.query(`update app.device_pin_attempts set failed_count = 0, locked_until = null where membership_id = $1`, [id])
     await audit(db, actor, 'staff.unlocked', 'membership', id)

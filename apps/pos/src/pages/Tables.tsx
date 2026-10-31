@@ -457,6 +457,8 @@ function TableEditor({ table, areas, defaultArea, error, busy, onSave, onRemove,
   onRemove?: () => void
   onClose: () => void
 }) {
+  const settings = useQuery({ queryKey: ['pos-settings'], queryFn: () => api('/pos-settings') })
+  const defaultSeats = settings.data?.default_seats ?? 4
   return (
     <Modal title={table ? `Edit ${table.name}` : 'Add table'} onClose={onClose}>
       <form
@@ -468,7 +470,7 @@ function TableEditor({ table, areas, defaultArea, error, busy, onSave, onRemove,
         }}
       >
         <label className="field">Table name<input name="name" required maxLength={30} defaultValue={table?.name} placeholder="T1" /></label>
-        <label className="field">Seats<input name="seats" type="number" min={1} max={100} defaultValue={table?.seats ?? 4} required /></label>
+        <label className="field">Seats<input name="seats" type="number" min={1} max={100} defaultValue={table?.seats ?? defaultSeats} required /></label>
         <label className="field">
           Shape
           <select name="shape" defaultValue={table?.shape ?? 'square'}>
