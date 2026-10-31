@@ -137,3 +137,7 @@ Known limits: delivery app orders appear under Delivery on the board. Full scree
 
 Tests: 229 of 229 API tests in one clean full run of 50 minutes, 94 of 94 database rules.
 
+## Locked checkout amount (31 October 2026)
+
+The owner asked that the amount can't change at checkout. On a single payment it is now fixed to the bill. Only Split payment asks for an amount, and the last payment always takes the rest, so payments add up to the bill. Part-paying a bill at checkout is no longer offered. This is a rule on the screen: the API still accepts a smaller payment, because split payments are saved one at a time.
+
