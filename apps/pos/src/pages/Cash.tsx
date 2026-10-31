@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
+import { ChooseBranch, useWorkingBranch } from '../components/BranchPicker'
 import { Loading, Notice, PageHeader } from '../components/ui'
-import { activeBranch, api } from '../lib/api'
+import { api } from '../lib/api'
 import { money } from '../lib/format'
 
 const MOVEMENT_NAMES: Record<string, string> = {
@@ -15,17 +16,17 @@ export function Cash({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const { ask, node } = useAsk()
   const [viewing, setViewing] = useState<string | null>(null)
-  const branch = activeBranch() ?? (me.branchIds.length === 1 ? me.branchIds[0] : null)
+  const branch = useWorkingBranch(me)
   const canReview = me.permissions.includes('cash.review')
   const canMove = me.permissions.includes('cash.move')
   const canUse = me.permissions.includes('cash.use')
 
-  const registers = useQuery({ queryKey: ['registers', branch], queryFn: () => api('/registers'), enabled: Boolean(branch) && canUse })
-  const sessions = useQuery({ queryKey: ['sessions', branch], queryFn: () => api('/cash-sessions'), enabled: canUse || canReview })
-  const session = useQuery({ queryKey: ['session', viewing], queryFn: () => api(`/cash-sessions/${viewing}`), enabled: Boolean(viewing) })
+  const registers = useQuery({ queryKey: ['registers', branch], queryFn: () => api('/registers', { branch: true }), enabled: Boolean(branch) && canUse })
+  const sessions = useQuery({ queryKey: ['sessions', branch], queryFn: () => api('/cash-sessions', { branch: true }), enabled: canUse || canReview })
+  const session = useQuery({ queryKey: ['session', viewing], queryFn: () => api(`/cash-sessions/${viewing}`, { branch: true }), enabled: Boolean(viewing) })
 
   const act = useMutation({
-    mutationFn: ({ path, body }: { path: string; body: object }) => api(path, { method: 'POST', body }),
+    mutationFn: ({ path, body }: { path: string; body: object }) => api(path, { method: 'POST', body, branch: true }),
     onSuccess: (data) => {
       setViewing(data.id)
       queryClient.setQueryData(['session', data.id], data)
@@ -63,11 +64,12 @@ export function Cash({ me }: { me: Me }) {
 
   const current = session.data
 
+  if (!branch && canUse) return <ChooseBranch title="Cash" />
+
   return (
     <>
       {node}
       <PageHeader title="Cash" text="Every rupee in or out of the drawer is recorded. Differences stay on record." />
-      {!branch && <Notice>Choose a branch from the menu to use the drawer.</Notice>}
       {act.error && <div className="mb-3"><Notice>{act.error.message}</Notice></div>}
 
       <Loading ready={!registers.isPending || !branch} error={registers.error}>

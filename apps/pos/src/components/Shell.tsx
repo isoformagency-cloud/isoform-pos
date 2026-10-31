@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle, Armchair, Bell, Building2, ChartColumn, ChefHat, CircleDot, CreditCard, FileText, LayoutDashboard, LogOut, Menu as MenuIcon, MonitorSmartphone,
   MoreHorizontal, PauseCircle, Plus, Receipt, Search, Settings, ShoppingCart, Users, UtensilsCrossed, Wallet, X,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import type { Me } from '../App'
-import { activeBranch, api, saveActiveBranch, supabase } from '../lib/api'
+import { api, saveActiveBranch, supabase, useActiveBranch } from '../lib/api'
 import { useLiveUpdates } from '../lib/live'
+import { useChooseBranch } from './BranchPicker'
 import { CommandSearch } from './CommandSearch'
 import { Avatar, Mark } from './ui'
 
@@ -69,11 +70,11 @@ const allowed = (me: Me, item: NavItem) =>
   !item.needs || me.permissions.includes(item.needs) || Boolean(item.orNeeds && me.permissions.includes(item.orNeeds))
 
 function SideNav({ me, alerts, onPick }: { me: Me; alerts?: Alerts; onPick?: () => void }) {
-  const queryClient = useQueryClient()
+  const active = useActiveBranch()
   const branches = useQuery({ queryKey: ['branches'], queryFn: () => api('/branches') })
   const settings = useQuery({ queryKey: ['pos-settings'], queryFn: () => api('/pos-settings') })
   const list: { id: string; name: string }[] = branches.data?.items ?? []
-  const current = list.find((branch) => branch.id === activeBranch()) ?? (list.length === 1 ? list[0] : null)
+  const current = list.find((branch) => branch.id === active) ?? (list.length === 1 ? list[0] : null)
 
   const row = ({ to, label, icon: Icon, count }: NavItem) => {
     const value = count ? alerts?.[count] : 0
@@ -105,23 +106,6 @@ function SideNav({ me, alerts, onPick }: { me: Me; alerts?: Alerts; onPick?: () 
           <p className="truncate text-xs text-ink-soft">{current?.name ?? 'All branches'}</p>
         </div>
       </div>
-
-      {list.length > 1 && (
-        <label className="mt-2 block px-1">
-          <span className="sr-only">Branch</span>
-          <select
-            className="input !min-h-9 !text-sm"
-            defaultValue={activeBranch() ?? ''}
-            onChange={(event) => {
-              saveActiveBranch(event.target.value || null)
-              queryClient.invalidateQueries()
-            }}
-          >
-            <option value="">All my branches</option>
-            {list.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-          </select>
-        </label>
-      )}
 
       {me.permissions.includes('orders.write') && (
         <Link to="/pos?new=1" onClick={onPick} className="btn btn-primary mt-3 w-full">
@@ -156,6 +140,29 @@ function SideNav({ me, alerts, onPick }: { me: Me; alerts?: Alerts; onPick?: () 
         </div>
       </div>
     </div>
+  )
+}
+
+function BranchSwitcher() {
+  const active = useActiveBranch()
+  const choose = useChooseBranch()
+  const branches = useQuery({ queryKey: ['branches'], queryFn: () => api('/branches') })
+  const list: { id: string; name: string }[] = branches.data?.items ?? []
+  if (list.length < 2) return null
+
+  return (
+    <label className="flex min-w-0 items-center gap-1.5">
+      <Building2 size={16} strokeWidth={1.75} className="hidden shrink-0 text-ink-soft sm:block" aria-hidden="true" />
+      <span className="sr-only">Branch</span>
+      <select
+        className="h-9 w-28 min-w-0 rounded-[0.625rem] border border-line bg-white px-2 text-sm font-medium sm:w-40"
+        value={active ?? ''}
+        onChange={(event) => choose(event.target.value || null)}
+      >
+        <option value="">All branches</option>
+        {list.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+      </select>
+    </label>
   )
 }
 
@@ -228,11 +235,13 @@ export function Shell({ me }: { me: Me }) {
   const fullBleed = pathname === '/pos' || pathname === '/kitchen'
 
   // A branch remembered from someone else on a shared device would lock this person out.
-  const saved = activeBranch()
-  if (saved && !me.branchIds.includes(saved)) saveActiveBranch(null)
+  const active = useActiveBranch()
+  useEffect(() => {
+    if (active && !me.branchIds.includes(active)) saveActiveBranch(null)
+  }, [active, me.branchIds])
 
   const alerts = useQuery<Alerts>({ queryKey: ['alerts'], queryFn: () => api('/alerts', { branch: true }), refetchInterval: 20000 })
-  useLiveUpdates(activeBranch() ? [activeBranch()!] : me.branchIds.slice(0, 5))
+  useLiveUpdates(active ? [active] : me.branchIds.slice(0, 5))
 
   useEffect(() => {
     const open = (event: KeyboardEvent) => {
@@ -267,9 +276,10 @@ export function Shell({ me }: { me: Me }) {
         <button aria-label="Open menu" className="btn btn-ghost btn-icon lg:hidden" onClick={() => setDrawer(true)}>
           <MenuIcon size={20} aria-hidden="true" />
         </button>
-        <span className="lg:hidden"><Mark size={28} /></span>
+        <span className="lg:hidden max-[420px]:hidden"><Mark size={28} /></span>
+        <BranchSwitcher />
         <button
-          className="ml-auto hidden h-9 w-72 items-center gap-2 rounded-[0.625rem] border border-line bg-white px-3 text-sm text-ink-faint transition-colors hover:border-line-strong md:ml-0 md:flex"
+          className="ml-auto hidden h-9 w-64 items-center gap-2 rounded-[0.625rem] border border-line bg-white px-3 text-sm text-ink-faint transition-colors hover:border-line-strong md:ml-0 md:flex"
           onClick={() => setSearching(true)}
         >
           <Search size={16} className="shrink-0" aria-hidden="true" />

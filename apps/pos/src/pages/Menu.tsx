@@ -2,8 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
+import { useWorkingBranch } from '../components/BranchPicker'
 import { Loading, Notice, PageHeader } from '../components/ui'
-import { activeBranch, api } from '../lib/api'
+import { api } from '../lib/api'
 
 interface Variant {
   id: string
@@ -21,7 +22,7 @@ export function Menu({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const [panel, setPanel] = useState<Panel>(null)
   const { ask, node } = useAsk()
-  const branch = activeBranch() ?? (me.branchIds.length === 1 ? me.branchIds[0] : null)
+  const branch = useWorkingBranch(me)
   const canWrite = me.permissions.includes('menu.write')
   const menu = useQuery({
     queryKey: ['menu', branch],

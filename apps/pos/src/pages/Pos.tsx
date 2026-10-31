@@ -6,11 +6,12 @@ import {
 import { useNavigate, useSearchParams } from 'react-router'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
+import { ChooseBranch, useWorkingBranch } from '../components/BranchPicker'
 import { CustomerPicker } from '../components/CustomerPicker'
 import { DiscountDialog } from '../components/DiscountDialog'
 import { ORDER_TYPES, TYPE_LOOK, typeName } from '../components/order-look'
-import { Badge, Modal, Notice, PageHeader } from '../components/ui'
-import { activeBranch, api, ApiError } from '../lib/api'
+import { Badge, Modal, Notice } from '../components/ui'
+import { api, ApiError } from '../lib/api'
 import { isOlderDay, money, shortDate } from '../lib/format'
 
 type Change = { path: string; method?: string; body?: object }
@@ -32,7 +33,7 @@ export function Pos({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const branch = activeBranch() ?? (me.branchIds.length === 1 ? me.branchIds[0] : null)
+  const branch = useWorkingBranch(me)
   const orderId = params.get('order')
 
   const [draftType, setDraftType] = useState<string>('dine_in')
@@ -55,9 +56,19 @@ export function Pos({ me }: { me: Me }) {
 
   const select = (id: string | null) => {
     setError('')
-    setSecondBill([])
+    setSecondBill((old) => (old.length ? [] : old))
     setParams(id ? { order: id } : {}, { replace: true })
   }
+
+  // An order belongs to one branch, so changing branch starts fresh instead of showing someone else's.
+  const lastBranch = useRef(branch)
+  useEffect(() => {
+    if (lastBranch.current && branch && lastBranch.current !== branch) {
+      setDraftTable(null)
+      select(null)
+    }
+    lastBranch.current = branch
+  }, [branch])
 
   const askedTable = params.get('table')
   useEffect(() => {
@@ -65,7 +76,7 @@ export function Pos({ me }: { me: Me }) {
       setDraftTable(null)
       select(null)
     }
-  })
+  }, [params])
 
   useEffect(() => {
     const focus = (event: KeyboardEvent) => {
@@ -180,12 +191,7 @@ export function Pos({ me }: { me: Me }) {
     (!category || product.category_id === category) && product.name.toLowerCase().includes(term.trim().toLowerCase()))
 
   if (!branch) {
-    return (
-      <div className="p-5 md:p-8">
-        <PageHeader title="POS / Billing" />
-        <Notice>Choose a branch from the menu to take orders.</Notice>
-      </div>
-    )
+    return <ChooseBranch title="POS / Billing" />
   }
 
   const items = current?.items.filter((item: any) => item.status === 'active') ?? []

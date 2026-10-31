@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Me } from '../App'
 import { Loading, PageHeader } from '../components/ui'
-import { activeBranch, api } from '../lib/api'
+import { api, useActiveBranch } from '../lib/api'
 
 const money = (value: string) => `₹${Number(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const count = (value: number, noun: string) => `${value} ${noun}${value === 1 ? '' : 's'}`
@@ -24,7 +24,7 @@ function Figure({ label, value, note }: { label: string; value: string; note: st
 export function Reports({ me }: { me: Me }) {
   const [from, setFrom] = useState(today)
   const [to, setTo] = useState(today)
-  const branch = activeBranch()
+  const branch = useActiveBranch()
   const query = useQuery({
     queryKey: ['report', from, to, branch],
     queryFn: () => api(`/reports/daily?from=${from}&to=${to}${branch ? `&branchId=${branch}` : ''}`),

@@ -15,6 +15,8 @@ export function Branches({ me }: { me: Me }) {
     onSuccess: () => {
       setAdding(false)
       queryClient.invalidateQueries({ queryKey: ['branches'] })
+      // The sign-in details list your branches, so they have to catch up with the new one.
+      queryClient.invalidateQueries({ queryKey: ['me'] })
     },
   })
 

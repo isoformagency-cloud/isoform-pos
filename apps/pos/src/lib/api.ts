@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 declare const __SUPABASE_URL__: string
@@ -28,7 +29,16 @@ function store(key: string, value: string | null) {
 export const deviceCredential = () => stored(DEVICE_KEY)
 export const saveDeviceCredential = (value: string | null) => store(DEVICE_KEY, value)
 export const activeBranch = () => stored(BRANCH_KEY)
-export const saveActiveBranch = (value: string | null) => store(BRANCH_KEY, value)
+const branchListeners = new Set<() => void>()
+export function saveActiveBranch(value: string | null) {
+  store(BRANCH_KEY, value)
+  for (const listener of branchListeners) listener()
+}
+/** Every screen using this updates the moment the branch changes. */
+export const useActiveBranch = () => useSyncExternalStore((listener) => {
+  branchListeners.add(listener)
+  return () => branchListeners.delete(listener)
+}, activeBranch)
 
 export class ApiError extends Error {
   status: number

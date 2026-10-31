@@ -4,8 +4,9 @@ import { CalendarClock, LayoutGrid, Map as MapIcon, Pencil, Plus, Users, Utensil
 import { useNavigate } from 'react-router'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
+import { ChooseBranch, useWorkingBranch } from '../components/BranchPicker'
 import { Badge, Empty, Modal, Notice, PageHeader, Segmented } from '../components/ui'
-import { activeBranch, api } from '../lib/api'
+import { api } from '../lib/api'
 import { dateTime, localDate, money, time } from '../lib/format'
 
 export const STATES: Record<string, { label: string; tile: string; dot: string }> = {
@@ -46,7 +47,7 @@ function TableFace({ table }: { table: any }) {
 export function Tables({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const branch = activeBranch() ?? (me.branchIds.length === 1 ? me.branchIds[0] : null)
+  const branch = useWorkingBranch(me)
   const canManage = me.permissions.includes('tables.manage')
   const [areaId, setAreaId] = useState('')
   const [view, setView] = useState<'floor' | 'cards'>(window.innerWidth < 768 ? 'cards' : 'floor')
@@ -73,12 +74,7 @@ export function Tables({ me }: { me: Me }) {
   })
 
   if (!branch) {
-    return (
-      <>
-        <PageHeader title="Tables" />
-        <Notice>Choose a branch from the menu to see its tables.</Notice>
-      </>
-    )
+    return <ChooseBranch title="Tables" />
   }
 
   const areas: any[] = floor.data?.areas ?? []
