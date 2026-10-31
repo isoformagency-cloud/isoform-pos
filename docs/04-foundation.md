@@ -125,3 +125,15 @@ Known limits: UPI QR codes have not been scanned with a real UPI app. Cash recei
 
 Tests: 192 API tests passed, 94 of 94 database rules. The full run took 41 minutes. The report tests' setup hit its 2 minute limit there and on one solo rerun, so 18 were skipped, then passed 18 of 18 alone with a longer limit. The setup makes over 50 calls to Mumbai at about 100 to 140 ms for each database trip, so the limit is now 5 minutes. The last two POS fixes came after these runs and only passed the build.
 
+## Tables and kitchen, stages 4 and 5 (31 October 2026)
+
+Built: areas and tables with a floor plan you can drag, a card view, live table states, reservations, moving and merging, Send to kitchen by rounds, a kitchen board with item ticks, timers, delay warnings, type filters and full screen, and live updates between screens.
+
+Decisions: a table's state is worked out from its order and is never stored. Each table holds one open order, enforced in the database. Kitchen ticks are stored apart from order items, because a confirmed order's items can't change. Live signals carry no data, so each screen refetches through the API and permissions still apply. Item edits send no signal, to keep a busy till fast.
+
+The live signal was proved on two tabs: the second screen began refreshing 0.3 seconds after the save finished, about 5 seconds before its regular refresh was due. Kitchen staff can move tickets but can't start orders, and the Kitchen page can be turned off in Settings.
+
+Known limits: delivery app orders appear under Delivery on the board. Full screen was not clicked on screen. The floor plan was dragged with a mouse, not on a real touch screen. Reservations don't send reminders. Requests took 4 to 5 seconds during the on-screen check, because tests were running against the same database from this PC, so speed needs checking on the live site.
+
+Tests: 229 of 229 API tests in one clean full run of 50 minutes, 94 of 94 database rules.
+

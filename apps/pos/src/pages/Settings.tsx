@@ -43,6 +43,8 @@ export function Settings() {
       billFormat: format,
       discountPresets: String(form.get('discountPresets')).split(',').map((value) => Number(value.trim())).filter((value) => value > 0),
       cashierDiscountLimit: Number(form.get('cashierDiscountLimit')),
+      usesKitchen: form.get('usesKitchen') === 'on',
+      kitchenDelayMinutes: Number(form.get('kitchenDelayMinutes')),
     })
   }
 
@@ -137,6 +139,19 @@ export function Settings() {
               <label className="flex min-h-11 items-center gap-2 text-sm">
                 <input type="checkbox" name="requireSecondPerson" defaultChecked={!data?.allow_self_verification} />
                 Require a second person to confirm payments and review cash
+              </label>
+            </section>
+
+            <section className="card grid gap-4 p-5">
+              <h2 className="text-lg">Kitchen</h2>
+              <label className="flex min-h-11 items-center gap-2 text-sm">
+                <input type="checkbox" name="usesKitchen" defaultChecked={data?.uses_kitchen} />
+                Use the kitchen display
+              </label>
+              <p className="hint">Turn this off if you don’t prepare orders from a screen. Send to kitchen and the Kitchen page then disappear.</p>
+              <label className="field">
+                Mark tickets as delayed after (minutes)
+                <input name="kitchenDelayMinutes" type="number" min={1} max={240} defaultValue={data?.kitchen_delay_minutes ?? 15} required />
               </label>
             </section>
 

@@ -130,3 +130,13 @@ The live check now also covers confirming an order. Passed live through the API:
 Typical speed from the owner's PC: network 154 ms, adding an item 205 ms, issuing a bill 305 ms, recording a payment 310 ms. There were no slow requests in this run.
 
 Clicked through on a local copy as a cashier: colours and symbols, Confirm order, the lock on the order bar, bill preview, Issue bill, and Cash first on the payment form. The Discount button after confirming was not clicked on screen, because cashiers do not have it. It passed through the API.
+
+## Live check, 31 October 2026, POS rebuild
+
+The live site has the new screens. The live check passed in full: POS settings, alerts, order counts, search, hold and resume, confirm, discount, bill, payment, Confirm all, timeline, export, PIN login and role blocks. The request limit blocked 3 of 33 requests, as expected.
+
+Typical speed from the owner's PC: network 169 ms, adding an item 254 ms, issuing a bill 242 ms, recording a payment 215 ms.
+
+The PDF code loaded and made a PDF on the live site with nothing blocked by the security policy. The live screens were only opened as far as the sign-in page, because test logins are not typed into the live site. Signed-in screens were clicked through on a local copy.
+
+One embedded font was blocked by the security policy. It covers only rare Cyrillic characters, so nothing visible was affected, and fonts are no longer embedded.

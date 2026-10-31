@@ -5,13 +5,16 @@ import { z } from 'zod'
 import type { Env } from './platform/context.js'
 import { isConnectionError } from './platform/db.js'
 import { AppError } from './platform/errors.js'
+import { signalBranches } from './platform/live.js'
 import { billing } from './modules/billing/routes.js'
 import { cash } from './modules/cash/routes.js'
 import { identity, pinLogin } from './modules/identity/routes.js'
+import { kitchen } from './modules/kitchen/routes.js'
 import { menu } from './modules/menu/routes.js'
 import { orders } from './modules/orders/routes.js'
 import { payments } from './modules/payments/routes.js'
 import { reports } from './modules/reports/routes.js'
+import { tables } from './modules/tables/routes.js'
 import { tenancy } from './modules/tenancy/routes.js'
 import { workspace } from './modules/workspace/routes.js'
 
@@ -23,6 +26,16 @@ app.use(bodyLimit({
   onError: (c) => c.json({ code: 'too_large', message: 'That request is too large.' }, 413),
 }))
 
+// Changes other screens need straight away. Typing an item isn't one, so a busy till stays quick.
+const LIVE_CHANGES = /\/(orders(\/[^/]+)?|send|confirm|cancel|hold|merge|finalize|status|tick|seat|clear|layout|tables(\/[^/]+)?|reservations(\/[^/]+)?)$/
+
+app.use(async (c, next) => {
+  await next()
+  if (c.req.method === 'GET' || !c.res.ok || !LIVE_CHANGES.test(c.req.path)) return
+  const actor = c.get('actor')
+  if (actor) await signalBranches(actor.branchIds)
+})
+
 app.get('/health', (c) => c.json({ ok: true }))
 app.route('/', pinLogin)
 app.route('/', identity)
@@ -33,6 +46,8 @@ app.route('/', billing)
 app.route('/', payments)
 app.route('/', cash)
 app.route('/', reports)
+app.route('/', tables)
+app.route('/', kitchen)
 app.route('/', workspace)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))

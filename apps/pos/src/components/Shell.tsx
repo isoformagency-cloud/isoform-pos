@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Bell, Building2, ChartColumn, CircleDot, CreditCard, FileText, LayoutDashboard, LogOut, Menu as MenuIcon, MonitorSmartphone,
+  AlertTriangle, Armchair, Bell, Building2, ChartColumn, ChefHat, CircleDot, CreditCard, FileText, LayoutDashboard, LogOut, Menu as MenuIcon, MonitorSmartphone,
   MoreHorizontal, PauseCircle, Plus, Receipt, Search, Settings, ShoppingCart, Users, UtensilsCrossed, Wallet, X,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import type { Me } from '../App'
 import { activeBranch, api, saveActiveBranch, supabase } from '../lib/api'
+import { useLiveUpdates } from '../lib/live'
 import { CommandSearch } from './CommandSearch'
 import { Avatar, Mark } from './ui'
 
@@ -16,7 +17,7 @@ interface NavItem {
   icon: typeof Receipt
   needs?: string
   orNeeds?: string
-  count?: 'runningOrders' | 'unpaidBills' | 'paymentsToVerify'
+  count?: 'runningOrders' | 'unpaidBills' | 'paymentsToVerify' | 'kitchenActive'
 }
 
 const GROUPS: { label: string; items: NavItem[] }[] = [
@@ -26,6 +27,8 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
       { to: '/', label: 'Home', icon: LayoutDashboard },
       { to: '/pos', label: 'POS / Billing', icon: ShoppingCart, needs: 'orders.write' },
       { to: '/orders', label: 'Orders', icon: Receipt, needs: 'orders.read', count: 'runningOrders' },
+      { to: '/tables', label: 'Tables', icon: Armchair, needs: 'tables.read' },
+      { to: '/kitchen', label: 'Kitchen', icon: ChefHat, needs: 'kitchen.read', count: 'kitchenActive' },
       { to: '/invoices', label: 'Bills', icon: FileText, needs: 'billing.read', count: 'unpaidBills' },
       { to: '/payments', label: 'Payments', icon: CreditCard, needs: 'payments.read', count: 'paymentsToVerify' },
       { to: '/cash', label: 'Cash', icon: Wallet, needs: 'cash.use', orNeeds: 'cash.review' },
@@ -58,6 +61,8 @@ export interface Alerts {
   leftoverOrders: number
   unpaidBills: number
   paymentsToVerify: number
+  kitchenActive: number
+  kitchenDelayed: number
 }
 
 const allowed = (me: Me, item: NavItem) =>
@@ -126,7 +131,7 @@ function SideNav({ me, alerts, onPick }: { me: Me; alerts?: Alerts; onPick?: () 
 
       <nav aria-label="Main" className="thin-scroll mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto px-px">
         {GROUPS.map((group) => {
-          const items = group.items.filter((item) => allowed(me, item))
+          const items = group.items.filter((item) => allowed(me, item) && (item.to !== '/kitchen' || settings.data?.uses_kitchen !== false))
           if (items.length === 0) return null
           return (
             <div key={group.label}>
@@ -172,6 +177,7 @@ function AlertBell({ alerts }: { alerts?: Alerts }) {
   }, [open])
 
   const rows = [
+    { count: alerts?.kitchenDelayed, to: '/kitchen', icon: AlertTriangle, text: (n: number) => `${n} kitchen ${n === 1 ? 'ticket' : 'tickets'} delayed` },
     { count: alerts?.paymentsToVerify, to: '/payments', icon: CreditCard, text: (n: number) => `${n} ${n === 1 ? 'payment' : 'payments'} to confirm` },
     { count: alerts?.unpaidBills, to: '/invoices', icon: FileText, text: (n: number) => `${n} unpaid ${n === 1 ? 'bill' : 'bills'}` },
     { count: alerts?.heldOrders, to: '/orders?tab=held', icon: PauseCircle, text: (n: number) => `${n} ${n === 1 ? 'order' : 'orders'} on hold` },
@@ -219,13 +225,14 @@ export function Shell({ me }: { me: Me }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const canOrder = me.permissions.includes('orders.write')
-  const fullBleed = pathname === '/pos'
+  const fullBleed = pathname === '/pos' || pathname === '/kitchen'
 
   // A branch remembered from someone else on a shared device would lock this person out.
   const saved = activeBranch()
   if (saved && !me.branchIds.includes(saved)) saveActiveBranch(null)
 
   const alerts = useQuery<Alerts>({ queryKey: ['alerts'], queryFn: () => api('/alerts', { branch: true }), refetchInterval: 20000 })
+  useLiveUpdates(activeBranch() ? [activeBranch()!] : me.branchIds.slice(0, 5))
 
   useEffect(() => {
     const open = (event: KeyboardEvent) => {
