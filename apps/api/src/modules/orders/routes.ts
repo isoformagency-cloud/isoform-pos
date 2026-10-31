@@ -4,6 +4,7 @@ import { audit, command, dbContext, readBody, requires, requiresAny, session, ty
 import { tx, type Db } from '../../platform/db.js'
 import { AppError, forbidden, notFound } from '../../platform/errors.js'
 import { can } from '../../platform/permissions.js'
+import { closeEmptyTickets, sendToKitchen } from '../kitchen/routes.js'
 import { assertDiscountLimit } from './discount-limit.js'
 
 export const orders = new Hono<Env>()
@@ -23,12 +24,13 @@ const newOrder = z.strictObject({
   aggregator: z.string().trim().min(2).max(40).optional(),
   aggregatorReference: z.string().trim().max(60).optional(),
   tableLabel: z.string().trim().max(30).optional(),
+  tableId: z.uuid().optional(),
   guestCount: guests.optional(),
   deliveryAddress: address.optional(),
   notes: z.string().trim().max(300).optional(),
 }).refine((value) => (value.orderType === 'aggregator') === Boolean(value.aggregator), {
   message: 'Choose the delivery app for this order.',
-})
+}).refine((value) => !value.tableId || value.orderType === 'dine_in', { message: 'Only dine-in orders use a table.' })
 
 const orderUpdate = z.strictObject({
   version,
@@ -36,6 +38,7 @@ const orderUpdate = z.strictObject({
   aggregator: z.string().trim().min(2).max(40).optional(),
   aggregatorReference: z.string().trim().max(60).optional(),
   tableLabel: z.string().trim().max(30).optional(),
+  tableId: z.uuid().nullable().optional(),
   guestCount: guests.nullable().optional(),
   deliveryAddress: address.optional(),
   notes: z.string().trim().max(300).optional(),
@@ -58,6 +61,8 @@ const voidItem = z.strictObject({ version, reason })
 const cancelOrder = z.strictObject({ version, reason: reason.optional() })
 const confirmOrder = z.strictObject({ version })
 const holdOrder = z.strictObject({ version, held: z.boolean() })
+const sendOrder = z.strictObject({ version })
+const mergeOrder = z.strictObject({ version, intoId: z.uuid(), intoVersion: version })
 const newDiscount = z.strictObject({
   id: z.uuid(),
   kind: z.enum(['percent', 'amount']),
@@ -74,7 +79,7 @@ async function loadOrder(db: Db, id: string) {
   const { rows: [order] } = await db.query(
     `select o.id, o.branch_id, o.display_number, o.order_type, o.aggregator, o.aggregator_reference, o.table_label, o.status,
             o.service_charge_percent::text, o.business_date::text, o.notes, o.version, o.created_at, o.cancel_reason, o.confirmed_at,
-            o.held_at, o.guest_count, o.delivery_address,
+            o.held_at, o.guest_count, o.delivery_address, o.table_id,
             o.customer_id, c.name as customer_name, c.phone as customer_phone
        from app.orders o left join app.customers c on c.id = o.customer_id where o.id = $1`,
     [id],
@@ -82,13 +87,16 @@ async function loadOrder(db: Db, id: string) {
   if (!order) throw notFound('Order')
   const { rows: items } = await db.query(
     `select i.id, i.variant_id, i.product_name, i.variant_name, i.unit_price::text, i.quantity::text, i.notes, i.status,
+            t.status as kitchen_status, k.id is not null as sent,
             coalesce(jsonb_agg(jsonb_build_object('id', a.id, 'name', a.addon_name, 'unitPrice', a.unit_price::text, 'quantity', a.quantity::text))
               filter (where a.id is not null), '[]') as addons,
             round((i.unit_price + coalesce(sum(a.unit_price * a.quantity), 0)) * i.quantity, 2)::text as line_total
        from app.order_items i
        left join app.order_item_addons a on a.order_item_id = i.id
+       left join app.kitchen_ticket_items k on k.order_item_id = i.id
+       left join app.kitchen_tickets t on t.id = k.ticket_id
       where i.order_id = $1
-      group by i.id order by i.created_at`,
+      group by i.id, k.id, t.status order by i.created_at`,
     [id],
   )
   const { rows: discounts } = await db.query(
@@ -112,6 +120,15 @@ async function loadOrder(db: Db, id: string) {
     [id],
   )
   return { ...order, items, discounts, ...totals }
+}
+
+/** Finds a table an order can use. Each table holds one open order. */
+async function freeTable(db: Db, tableId: string, orderId: string) {
+  const { rows: [table] } = await db.query(`select name from app.dining_tables where id = $1 and is_active`, [tableId])
+  if (!table) throw notFound('Table')
+  const { rows: taken } = await db.query(`select 1 from app.orders where table_id = $1 and status = 'open' and id <> $2`, [tableId, orderId])
+  if (taken.length) throw new AppError(409, 'table_busy', 'This table already has an open order.')
+  return table.name as string
 }
 
 /** Claims the order for this change. A stale version means someone else got there first. */
@@ -142,7 +159,7 @@ async function listOrders(db: Db, actor: Actor, filters: ListFilters, limit: num
   const number = filters.q && /^#?\d{1,9}$/.test(filters.q) ? Number(filters.q.replace('#', '')) : null
   const { rows } = await db.query(
     `select o.id, o.display_number, o.order_type, o.aggregator, o.table_label, o.status, o.version, o.created_at, o.branch_id,
-            o.confirmed_at, o.held_at, o.guest_count, o.business_date::text, o.cancel_reason,
+            o.confirmed_at, o.held_at, o.guest_count, o.business_date::text, o.cancel_reason, o.table_id,
             c.name as customer_name, c.phone as customer_phone,
             line.item_count, coalesce(bill.total, line.subtotal)::numeric(14,2)::text as amount,
             bill.outstanding::text, bill.paid::text, bill.numbers as bill_numbers
@@ -231,6 +248,17 @@ orders.get('/orders/:id/timeline', requires('orders.read'), async (c) => {
       [id],
     )
     for (const change of changes) timeline.push({ at: change.changed_at, label: `Cancelled: ${order.cancel_reason}`, by: change.display_name })
+    const { rows: rounds } = await db.query(
+      `select t.round, t.sent_at, t.ready_at, t.completed_at, m.display_name from app.kitchen_tickets t
+         join app.memberships m on m.id = t.sent_by where t.order_id = $1`,
+      [id],
+    )
+    for (const round of rounds) {
+      const label = rounds.length > 1 ? ` (round ${round.round})` : ''
+      timeline.push({ at: round.sent_at, label: `Sent to kitchen${label}`, by: round.display_name })
+      if (round.ready_at) timeline.push({ at: round.ready_at, label: `Ready${label}`, by: null })
+      if (round.completed_at) timeline.push({ at: round.completed_at, label: `Served${label}`, by: null })
+    }
     if (can(actor.role, 'billing.read')) {
       const { rows: bills } = await db.query(
         `select n.number, n.grand_total::text, n.issued_at, m.display_name from app.invoices n
@@ -266,6 +294,7 @@ orders.post('/orders', requires('orders.write'), async (c) => {
       [branchId],
     )
     // Held until commit, so two tills can never take the same number.
+    const tableName = input.tableId ? await freeTable(db, input.tableId, input.id) : null
     await db.query(`select app.lock_record('order_number', $1)`, [branchId])
     const { rows: [{ next }] } = await db.query(
       `select coalesce(max(display_number), 0) + 1 as next from app.orders where branch_id = $1 and business_date = $2`,
@@ -273,11 +302,12 @@ orders.post('/orders', requires('orders.write'), async (c) => {
     )
     await db.query(
       `insert into app.orders (id, tenant_id, branch_id, display_number, order_type, aggregator, aggregator_reference,
-         table_label, notes, business_date, created_by, guest_count, delivery_address)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+         table_label, notes, business_date, created_by, guest_count, delivery_address, table_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [input.id, actor.tenantId, branchId, next, input.orderType, input.aggregator, input.aggregatorReference,
-        input.tableLabel, input.notes, business_date, actor.membershipId, input.guestCount, input.deliveryAddress],
+        tableName ?? input.tableLabel, input.notes, business_date, actor.membershipId, input.guestCount, input.deliveryAddress, input.tableId],
     )
+    if (input.tableId) await db.query(`update app.dining_tables set seated_at = null, seated_guests = null where id = $1`, [input.tableId])
     return loadOrder(db, input.id)
   })
 })
@@ -286,21 +316,31 @@ orders.patch('/orders/:id', requires('orders.write'), async (c) => {
   const id = uuidParam(c.req.param('id'))
   const input = await readBody(c, orderUpdate)
   return command(c, 200, async (db, actor) => {
+    if (input.tableId) {
+      const { rows: [current] } = await db.query(`select order_type from app.orders where id = $1`, [id])
+      if (!current) throw notFound('Order')
+      if ((input.orderType ?? current.order_type) !== 'dine_in') throw new AppError(422, 'not_dine_in', 'Only dine-in orders use a table.')
+    }
+    const tableName = input.tableId ? await freeTable(db, input.tableId, id) : null
+    const leavesTable = input.tableId === null || (input.orderType && input.orderType !== 'dine_in')
     const { rowCount } = await db.query(
       `update app.orders set
-         table_label = coalesce($3, table_label), notes = coalesce($4, notes),
+         table_label = case when $14 then null else coalesce($3, table_label) end, notes = coalesce($4, notes),
          service_charge_percent = coalesce($5, service_charge_percent),
          customer_id = case when $7 then $6::uuid else customer_id end,
          order_type = coalesce($8, order_type),
          aggregator = case when $8::text is null then aggregator when $8 = 'aggregator' then $9 end,
          aggregator_reference = case when $8::text is null then aggregator_reference when $8 = 'aggregator' then $10 end,
          guest_count = case when $11 then $12::int else guest_count end,
-         delivery_address = coalesce($13, delivery_address)
+         delivery_address = coalesce($13, delivery_address),
+         table_id = case when $14 then null else coalesce($15, table_id) end
        where id = $1 and version = $2`,
-      [id, input.version, input.tableLabel, input.notes, input.serviceChargePercent, input.customerId ?? null, input.customerId !== undefined,
-        input.orderType, input.aggregator, input.aggregatorReference, input.guestCount !== undefined, input.guestCount ?? null, input.deliveryAddress],
+      [id, input.version, tableName ?? input.tableLabel, input.notes, input.serviceChargePercent, input.customerId ?? null, input.customerId !== undefined,
+        input.orderType, input.aggregator, input.aggregatorReference, input.guestCount !== undefined, input.guestCount ?? null, input.deliveryAddress,
+        Boolean(leavesTable), input.tableId ?? null],
     )
     if (!rowCount) await touch(db, id, input.version)
+    if (input.tableId) await db.query(`update app.dining_tables set seated_at = null, seated_guests = null where id = $1`, [input.tableId])
     if (input.serviceChargePercent !== undefined) {
       await audit(db, actor, 'order.service_charge', 'order', id, { percent: input.serviceChargePercent })
     }
@@ -363,8 +403,13 @@ orders.patch('/orders/:id/items/:itemId', requires('orders.write'), async (c) =>
   const input = await readBody(c, itemUpdate)
   return command(c, 200, async (db, actor) => {
     await touch(db, orderId, input.version)
-    const { rows: [before] } = await db.query(`select quantity::text from app.order_items where id = $1 and order_id = $2 and status = 'active'`, [itemId, orderId])
+    const { rows: [before] } = await db.query(
+      `select i.quantity::text, exists (select 1 from app.kitchen_ticket_items k where k.order_item_id = i.id) as sent
+         from app.order_items i where i.id = $1 and i.order_id = $2 and i.status = 'active'`,
+      [itemId, orderId],
+    )
     if (!before) throw notFound('Order item')
+    if (before.sent) throw new AppError(409, 'item_sent', 'This item has gone to the kitchen. Add a new one instead.')
     await db.query(
       `update app.order_items set quantity = coalesce($2, quantity), notes = coalesce($3, notes) where id = $1`,
       [itemId, input.quantity, input.notes],
@@ -380,12 +425,17 @@ orders.post('/orders/:id/items/:itemId/void', requires('orders.write'), async (c
   const input = await readBody(c, voidItem)
   return command(c, 200, async (db, actor) => {
     await touch(db, orderId, input.version)
+    const { rows: [sent] } = await db.query(`select 1 as yes from app.kitchen_ticket_items where order_item_id = $1`, [itemId])
+    if (sent && !can(actor.role, 'orders.cancel')) {
+      throw new AppError(403, 'manager_needed', 'This item has gone to the kitchen. Ask a manager to remove it.')
+    }
     const { rowCount } = await db.query(
       `update app.order_items set status = 'voided', void_reason = $3, voided_by = $4
         where id = $1 and order_id = $2 and status = 'active'`,
       [itemId, orderId, input.reason, actor.membershipId],
     )
     if (!rowCount) throw notFound('Order item')
+    if (sent) await closeEmptyTickets(db, orderId)
     await audit(db, actor, 'order_item.voided', 'order_item', itemId, { reason: input.reason })
     return loadOrder(db, orderId)
   })
@@ -440,8 +490,63 @@ orders.post('/orders/:id/cancel', requires('orders.write'), async (c) => {
       [id, input.version, cancelReason],
     )
     if (!rowCount) await touch(db, id, input.version)
+    await db.query(`update app.kitchen_tickets set status = 'cancelled' where order_id = $1 and status <> 'completed'`, [id])
     await audit(db, actor, 'order.cancelled', 'order', id, { reason: cancelReason, activeItems: active })
     return loadOrder(db, id)
+  })
+})
+
+/** Sends everything new to the kitchen. Each send is a round, so a table can order more later. */
+orders.post('/orders/:id/send', requires('orders.write'), async (c) => {
+  const id = uuidParam(c.req.param('id'))
+  const input = await readBody(c, sendOrder)
+  return command(c, 200, async (db, actor) => {
+    const { rows: [order] } = await db.query(`select branch_id from app.orders where id = $1`, [id])
+    if (!order) throw notFound('Order')
+    const { rows: [tenant] } = await db.query(`select uses_kitchen from app.tenants where id = $1`, [actor.tenantId])
+    if (!tenant.uses_kitchen) throw new AppError(409, 'kitchen_off', 'The kitchen display is turned off in Settings.')
+    await touch(db, id, input.version)
+    const ticket = await sendToKitchen(db, actor, id, order.branch_id)
+    if (!ticket) throw new AppError(409, 'nothing_to_send', 'Everything on this order is already with the kitchen.')
+    await audit(db, actor, 'order.sent_to_kitchen', 'order', id, { ticket })
+    return loadOrder(db, id)
+  })
+})
+
+/** Combines two tables' orders. Bills haven't been issued, so the second order simply closes. */
+orders.post('/orders/:id/merge', requires('orders.write'), async (c) => {
+  const id = uuidParam(c.req.param('id'))
+  const input = await readBody(c, mergeOrder)
+  if (id === input.intoId) throw new AppError(422, 'same_order', 'Choose a different table.')
+  return command(c, 200, async (db, actor) => {
+    // A fixed order means two merges running at once can never deadlock.
+    const steps: [string, number][] = [[id, input.version], [input.intoId, input.intoVersion]]
+    for (const [orderId, expected] of steps.sort(([a], [b]) => a.localeCompare(b))) await touch(db, orderId, expected)
+
+    const { rows: both } = await db.query(
+      `select o.id, o.display_number, o.status, o.confirmed_at, o.guest_count,
+              (select count(*)::int from app.order_discounts d where d.order_id = o.id) as discounts
+         from app.orders o where o.id = any($1::uuid[])`,
+      [[id, input.intoId]],
+    )
+    const from = both.find((row) => row.id === id)
+    const into = both.find((row) => row.id === input.intoId)
+    if (!from || !into) throw notFound('Order')
+    if (from.status !== 'open' || into.status !== 'open') throw new AppError(409, 'order_closed', 'Both orders must still be open.')
+    if (from.confirmed_at || into.confirmed_at) throw new AppError(409, 'order_confirmed', 'Confirmed orders can’t be merged.')
+    if (from.discounts > 0) throw new AppError(409, 'has_discount', 'Remove the discount before merging this order.')
+
+    await db.query(`update app.order_items set order_id = $2 where order_id = $1`, [id, input.intoId])
+    await db.query(`update app.kitchen_tickets set order_id = $2 where order_id = $1`, [id, input.intoId])
+    await db.query(
+      `update app.orders set status = 'cancelled', cancel_reason = $2, table_id = null where id = $1`,
+      [id, `Merged into order #${into.display_number}`],
+    )
+    if (from.guest_count) {
+      await db.query(`update app.orders set guest_count = coalesce(guest_count, 0) + $2 where id = $1`, [input.intoId, from.guest_count])
+    }
+    await audit(db, actor, 'order.merged', 'order', id, { into: input.intoId })
+    return loadOrder(db, input.intoId)
   })
 })
 
@@ -470,12 +575,16 @@ orders.post('/orders/:id/confirm', requires('orders.write'), async (c) => {
       [id],
     )
     if (active === 0) throw new AppError(409, 'empty_order', 'Add at least one item first.')
+    const { rows: [order] } = await db.query(`select branch_id from app.orders where id = $1`, [id])
     const { rowCount } = await db.query(
       `update app.orders set confirmed_at = now(), confirmed_by = $3
         where id = $1 and version = $2 and confirmed_at is null`,
       [id, input.version, actor.membershipId],
     )
     if (!rowCount) await touch(db, id, input.version)
+    // Nothing confirmed should be forgotten, so anything still unsent goes now.
+    const { rows: [tenant] } = await db.query(`select uses_kitchen from app.tenants where id = $1`, [actor.tenantId])
+    if (tenant.uses_kitchen) await sendToKitchen(db, actor, id, order.branch_id)
     await audit(db, actor, 'order.confirmed', 'order', id, { activeItems: active })
     return loadOrder(db, id)
   })

@@ -1,6 +1,6 @@
 # ISOFORM POS: Feature list from the old app
 
-Stages 1 to 3 are approved and built, with the differences listed below. Stages 4 to 11 are not built.
+Stages 1 to 5 are approved and built, with the differences listed below. Stages 6 to 11 are not built.
 
 Source: https://isoform-cafe.netlify.app/app, reviewed on 31 October 2026. Main screens were opened in the demo café. Sign-up, onboarding, checkout and pop-ups were read from the site's public code and not clicked through.
 
@@ -22,7 +22,16 @@ To approve, reply with the stages you want and the numbers to skip, for example 
 - **26, bill prefix:** left out. A GST series must stay in sequence, so numbers keep the branch code.
 - **26, tax split on or off:** left out. GST bills must show CGST and SGST separately, so it stays on.
 - **26, GSTIN:** shown but can't be edited, because it is on legal bills. It is set at activation.
-- **Decision A:** Send to kitchen is stage 5, so Confirm order stays as it is for now. Stage 5 will use two buttons.
+- **Decision A:** settled in stage 5 with two buttons. Send to kitchen goes round by round, so a table can order more. Confirm order locks everything before the bill and sends anything still unsent.
+
+## What changed from this list in stages 4 and 5
+
+- **27 to 33, tables:** a table's state comes from its order, so the two can't disagree. Billing means the order is confirmed. The table frees when the bill is issued, not when it's paid.
+- **31, reservations:** a table shows as Reserved from 2 hours before a booking until 30 minutes after it. Two bookings on one table must be 2 hours apart.
+- **33, merge:** moves the items to the other table's order and closes the first order. Confirmed orders can't be merged, and an order with a discount must have it removed first.
+- **34, sent items:** once with the kitchen, an item's quantity can't change. To add more, add a new line. Only owners and managers can remove a sent item, which was the rule planned in stage 2.
+- **40, live updates:** screens update on their own within about a second of a change. If the connection drops, they fall back to refreshing every 10 to 20 seconds.
+- **Added setting:** Use the kitchen display can be turned off in Settings, for cafés with no kitchen screen. It wasn't in the list.
 
 ## Stage 1: Look and layout
 

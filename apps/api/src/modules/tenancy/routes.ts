@@ -18,6 +18,8 @@ const settings = z.strictObject({
   billFormat: z.enum(['thermal', 'a4']).optional(),
   discountPresets: z.array(z.number().int().min(1).max(100)).max(6).optional(),
   cashierDiscountLimit: z.number().min(0).max(100).optional(),
+  usesKitchen: z.boolean().optional(),
+  kitchenDelayMinutes: z.number().int().min(1).max(240).optional(),
 })
 
 const newBranch = z.strictObject({
@@ -41,7 +43,8 @@ tenancy.get('/business', requires('business.read'), async (c) => {
   const business = await tx(dbContext(actor), async (db) => {
     const { rows } = await db.query(
       `select id, display_name, logo_path, currency, rounding_rule, prices_include_tax, allow_self_verification,
-              upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text
+              upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text,
+              uses_kitchen, kitchen_delay_minutes
          from app.tenants where id = $1`,
       [actor.tenantId],
     )
@@ -64,11 +67,14 @@ tenancy.patch('/business', requires('business.write'), async (c) => {
          bill_footer = case when $8::text is null then bill_footer else nullif($8, '') end,
          bill_format = coalesce($9, bill_format),
          discount_presets = coalesce($10, discount_presets),
-         cashier_discount_limit = coalesce($11, cashier_discount_limit)
+         cashier_discount_limit = coalesce($11, cashier_discount_limit),
+         uses_kitchen = coalesce($12, uses_kitchen),
+         kitchen_delay_minutes = coalesce($13, kitchen_delay_minutes)
        where id = $1 returning id, display_name, rounding_rule, prices_include_tax, allow_self_verification,
-         upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text`,
+         upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text, uses_kitchen, kitchen_delay_minutes`,
       [actor.tenantId, input.displayName, input.roundingRule, input.pricesIncludeTax, input.allowSelfVerification,
-        input.upiId, input.fssaiNumber, input.billFooter, input.billFormat, input.discountPresets, input.cashierDiscountLimit],
+        input.upiId, input.fssaiNumber, input.billFooter, input.billFormat, input.discountPresets, input.cashierDiscountLimit,
+        input.usesKitchen, input.kitchenDelayMinutes],
     )
     await audit(db, actor, 'business.updated', 'tenant', actor.tenantId, input)
     return rows[0]

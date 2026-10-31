@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChartColumn, ChevronRight, CreditCard, FileText, PauseCircle, Receipt, ShoppingCart, UtensilsCrossed, Wallet, type LucideIcon } from 'lucide-react'
+import { Armchair, ChartColumn, ChefHat, ChevronRight, CreditCard, FileText, PauseCircle, Receipt, ShoppingCart, UtensilsCrossed, Wallet, type LucideIcon } from 'lucide-react'
 import { Link } from 'react-router'
 import type { Me } from '../App'
 import type { Alerts } from '../components/Shell'
@@ -12,6 +12,8 @@ const greeting = () => {
 
 const SHORTCUTS: { to: string; label: string; text: string; icon: LucideIcon; needs: string }[] = [
   { to: '/pos?new=1', label: 'Take an order', text: 'Open the POS and start billing', icon: ShoppingCart, needs: 'orders.write' },
+  { to: '/tables', label: 'Tables', text: 'See who is seated, and reserve tables', icon: Armchair, needs: 'tables.read' },
+  { to: '/kitchen', label: 'Kitchen', text: 'Tickets to prepare and serve', icon: ChefHat, needs: 'kitchen.read' },
   { to: '/cash', label: 'Cash drawer', text: 'Open or close a cash session', icon: Wallet, needs: 'cash.use' },
   { to: '/menu', label: 'Menu', text: 'Items, prices and sold-out status', icon: UtensilsCrossed, needs: 'menu.write' },
   { to: '/reports', label: 'Reports', text: 'See how the day went', icon: ChartColumn, needs: 'reports.read' },

@@ -10,6 +10,7 @@ import { Checkout } from './pages/Checkout'
 import { Devices } from './pages/Devices'
 import { Home } from './pages/Home'
 import { InvoiceDetail, Invoices } from './pages/Invoices'
+import { Kitchen } from './pages/Kitchen'
 import { Login, SetPassword } from './pages/Login'
 import { Menu } from './pages/Menu'
 import { Orders } from './pages/Orders'
@@ -19,6 +20,7 @@ import { Pos } from './pages/Pos'
 import { Reports } from './pages/Reports'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
+import { Tables } from './pages/Tables'
 
 export interface Me {
   membershipId: string
@@ -76,6 +78,8 @@ export function App() {
         <Route index element={<Home me={me.data} />} />
         <Route path="pos" element={<Pos me={me.data} />} />
         <Route path="orders" element={<Orders me={me.data} />} />
+        <Route path="tables" element={<Tables me={me.data} />} />
+        <Route path="kitchen" element={<Kitchen me={me.data} />} />
         <Route path="checkout/:id" element={<Checkout me={me.data} />} />
         <Route path="invoices" element={<Invoices />} />
         <Route path="invoices/:id" element={<InvoiceDetail me={me.data} />} />

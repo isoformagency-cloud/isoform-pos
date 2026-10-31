@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight, Lock, MapPin, MessageSquare, Minus, Pause, Percent, Play, Plus, Receipt, Search, Trash2, User, UtensilsCrossed,
+  Check, ChefHat, ChevronRight, Lock, MapPin, MessageSquare, Minus, Pause, Percent, Play, Plus, Receipt, Search, Trash2, User, UtensilsCrossed,
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router'
 import type { Me } from '../App'
@@ -36,6 +36,7 @@ export function Pos({ me }: { me: Me }) {
   const orderId = params.get('order')
 
   const [draftType, setDraftType] = useState<string>('dine_in')
+  const [draftTable, setDraftTable] = useState<{ id: string; name: string } | null>(null)
   const [category, setCategory] = useState<string | null>(null)
   const [term, setTerm] = useState('')
   const [picking, setPicking] = useState<any | null>(null)
@@ -58,8 +59,12 @@ export function Pos({ me }: { me: Me }) {
     setParams(id ? { order: id } : {}, { replace: true })
   }
 
+  const askedTable = params.get('table')
   useEffect(() => {
-    if (params.get('new')) select(null)
+    if (params.get('new')) {
+      setDraftTable(null)
+      select(null)
+    }
   })
 
   useEffect(() => {
@@ -77,6 +82,19 @@ export function Pos({ me }: { me: Me }) {
   const list = useQuery({ queryKey: ['orders', 'bar', branch], queryFn: () => api('/orders?status=open', { branch: true }), enabled: Boolean(branch), refetchInterval: 15000 })
   const menu = useQuery({ queryKey: ['menu', branch], queryFn: () => api(`/menu?branchId=${branch}`), enabled: Boolean(branch) })
   const settings = useQuery({ queryKey: ['pos-settings'], queryFn: () => api('/pos-settings') })
+  const floor = useQuery({ queryKey: ['floor', branch], queryFn: () => api('/floor', { branch: true }), enabled: Boolean(branch) && me.permissions.includes('tables.read') })
+  const usesKitchen = settings.data?.uses_kitchen !== false
+  // Applied once, so choosing a different table afterwards isn't undone by a refresh.
+  const appliedTable = useRef<string | null>(null)
+  useEffect(() => {
+    if (!askedTable || !floor.data || appliedTable.current === askedTable) return
+    const table = floor.data.tables.find((item: any) => item.id === askedTable)
+    if (table) {
+      appliedTable.current = askedTable
+      setDraftTable({ id: table.id, name: table.name })
+      setDraftType('dine_in')
+    }
+  }, [askedTable, floor.data])
   const order = useQuery({ queryKey: ['order', orderId], queryFn: () => api(`/orders/${orderId}`, { branch: true }), enabled: Boolean(orderId) })
   const current = orderId ? order.data : undefined
 
@@ -98,8 +116,10 @@ export function Pos({ me }: { me: Me }) {
 
   function ensureOrder(extra: object = {}) {
     if (liveId.current) return Promise.resolve(liveId.current)
-    creating.current ??= api('/orders', { method: 'POST', branch: true, body: { id: crypto.randomUUID(), orderType: draftType, ...extra } })
+    const seat = draftTable && draftType === 'dine_in' ? { tableId: draftTable.id } : {}
+    creating.current ??= api('/orders', { method: 'POST', branch: true, body: { id: crypto.randomUUID(), orderType: draftType, ...seat, ...extra } })
       .then((data) => {
+        setDraftTable(null)
         queryClient.setQueryData(['order', data.id], data)
         liveId.current = data.id
         select(data.id)
@@ -174,6 +194,7 @@ export function Pos({ me }: { me: Me }) {
   const canEdit = open && !confirmed && canWrite
   const empty = items.length === 0
   const type = current?.order_type ?? draftType
+  const unsent = items.filter((item: any) => !item.sent).length
   const orders: any[] = list.data?.items ?? []
   const running = orders.filter((item) => !item.held_at)
   const held = orders.filter((item) => item.held_at)
@@ -210,7 +231,7 @@ export function Pos({ me }: { me: Me }) {
 
   function addVariant(variant: any, addonIds: string[] = []) {
     change.mutate((latest) => {
-      const same = latest?.items.find((item: any) => item.variant_id === variant.id && item.status === 'active' && item.addons.length === 0)
+      const same = latest?.items.find((item: any) => item.variant_id === variant.id && item.status === 'active' && item.addons.length === 0 && !item.sent)
       if (same && addonIds.length === 0) {
         return { path: `/items/${same.id}`, method: 'PATCH', body: { version: latest.version, quantity: String(Number(same.quantity) + 1) } }
       }
@@ -259,6 +280,7 @@ export function Pos({ me }: { me: Me }) {
 
   const deleteEmpty = () => change.mutate((latest) => ({ path: '/cancel', body: { version: latest.version } }), { onSuccess: () => select(null) })
   const confirmOrder = () => change.mutate((latest) => ({ path: '/confirm', body: { version: latest.version } }))
+  const sendOrder = () => change.mutate((latest) => ({ path: '/send', body: { version: latest.version } }))
   const hold = (next: boolean) => change.mutate((latest) => ({ path: '/hold', body: { version: latest.version, held: next } }), {
     onSuccess: () => { if (next) select(null) },
   })
@@ -369,7 +391,7 @@ export function Pos({ me }: { me: Me }) {
               <button className="mb-1 flex items-center gap-1 text-sm text-ink-soft lg:hidden" onClick={() => setPane('menu')}>Back to menu</button>
               <h2 className="truncate text-lg">
                 {current ? `Order #${current.display_number}` : 'New order'}
-                {current?.table_label ? ` · ${current.table_label}` : ''}
+                {(current?.table_label ?? draftTable?.name) ? ` · ${current?.table_label ?? draftTable?.name}` : ''}
               </h2>
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-ink-soft">
                 {current?.guest_count ? `${current.guest_count} guests` : current ? typeName(type) : 'Tap an item to begin'}
@@ -404,7 +426,7 @@ export function Pos({ me }: { me: Me }) {
             {type === 'dine_in' && (
               <button disabled={!open || !canWrite} className="btn btn-secondary btn-sm" onClick={() => setDialog('table')}>
                 <UtensilsCrossed size={14} aria-hidden="true" />
-                {current?.table_label ? `Table ${current.table_label}` : 'Choose table'}
+                {(current?.table_label ?? draftTable?.name) ? `Table ${current?.table_label ?? draftTable?.name}` : 'Choose table'}
               </button>
             )}
             {can('customers.read') && (
@@ -446,7 +468,17 @@ export function Pos({ me }: { me: Me }) {
                 </div>
                 {item.addons.map((addon: any) => <p key={addon.id} className="text-xs text-ink-soft">+ {addon.name}</p>)}
                 {item.notes && <p className="text-xs text-wait">Note: {item.notes}</p>}
-                {canEdit ? (
+                {canEdit && item.sent ? (
+                  <div className="mt-1 flex items-center gap-2 text-xs text-ink-soft">
+                    <span className="tnum">Quantity {Number(item.quantity)}</span>
+                    <span className="flex items-center gap-1 text-ok"><Check size={12} aria-hidden="true" /> With kitchen</span>
+                    {canCancel && (
+                      <button aria-label={`Remove ${item.product_name}`} className="btn btn-ghost btn-icon ml-auto !min-h-8 !w-8" onClick={() => remove(item)}>
+                        <Trash2 size={15} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                ) : canEdit ? (
                   <div className="mt-1.5 flex items-center gap-1">
                     <button aria-label={`One less ${item.product_name}`} className="btn btn-secondary btn-icon !min-h-9 !w-9 !rounded-[0.625rem]" disabled={Number(item.quantity) <= 1} onClick={() => step(item, -1)}>
                       <Minus size={14} aria-hidden="true" />
@@ -531,6 +563,11 @@ export function Pos({ me }: { me: Me }) {
                     <button className="btn btn-secondary btn-sm flex-1" onClick={serviceCharge}>Service charge</button>
                   )}
                 </div>
+                {usesKitchen && !confirmed && unsent > 0 && canWrite && (
+                  <button className="btn btn-secondary w-full" disabled={change.isPending} onClick={sendOrder}>
+                    <ChefHat size={16} aria-hidden="true" /> Send {unsent} to kitchen
+                  </button>
+                )}
                 {!confirmed && !empty && canWrite && (
                   <button className="btn btn-primary w-full" disabled={change.isPending} onClick={confirmOrder}>Confirm order</button>
                 )}
@@ -592,7 +629,10 @@ export function Pos({ me }: { me: Me }) {
       {dialog === 'table' && (
         <TableDialog
           order={current}
+          floor={floor.data}
+          draft={draftTable}
           onClose={() => setDialog(null)}
+          onPickDraft={(table) => { setDraftTable(table); setDialog(null) }}
           onSave={(body) => {
             change.mutate((latest) => ({ path: '', method: 'PATCH', body: { version: latest.version, ...body } }))
             setDialog(null)
@@ -614,15 +654,57 @@ export function Pos({ me }: { me: Me }) {
   )
 }
 
-function TableDialog({ order, onClose, onSave }: { order?: any; onClose: () => void; onSave: (body: object) => void }) {
+function TableDialog({ order, floor, draft, onClose, onSave, onPickDraft }: {
+  order?: any
+  floor?: any
+  draft: { id: string; name: string } | null
+  onClose: () => void
+  onSave: (body: object) => void
+  onPickDraft: (table: { id: string; name: string } | null) => void
+}) {
   const [table, setTable] = useState(order?.table_label ?? '')
   const [guests, setGuests] = useState(order?.guest_count ? String(order.guest_count) : '')
+  const guestCount = guests ? Number(guests) : null
+  const tables: any[] = floor?.tables ?? []
+  const free = tables.filter((item) => !item.order_id || item.id === order?.table_id)
+
+  if (tables.length > 0) {
+    const pick = (item: any) => {
+      if (order) onSave({ tableId: item.id, guestCount })
+      else onPickDraft({ id: item.id, name: item.name })
+    }
+    return (
+      <Modal title="Choose a table" onClose={onClose}>
+        {order && (
+          <label className="field mb-3">Guests<input value={guests} inputMode="numeric" onChange={(event) => setGuests(event.target.value.replace(/\D/g, '').slice(0, 3))} /></label>
+        )}
+        {free.length === 0 && <p className="py-3 text-sm text-ink-soft">No free tables right now.</p>}
+        <ul className="grid grid-cols-3 gap-2">
+          {free.map((item) => {
+            const chosen = item.id === (order?.table_id ?? draft?.id)
+            return (
+              <li key={item.id}>
+                <button className={`min-h-16 w-full rounded-xl border p-2 text-center text-sm ${chosen ? 'border-brand bg-brand-tint text-brand-deep' : 'border-line bg-white hover:border-line-strong'}`} onClick={() => pick(item)}>
+                  <span className="block font-medium">{item.name}</span>
+                  <span className="block text-xs text-ink-soft">{item.seats} seats</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+        {(order?.table_id || draft) && (
+          <button className="btn btn-ghost btn-sm mt-3" onClick={() => (order ? onSave({ tableId: null }) : onPickDraft(null))}>Remove table</button>
+        )}
+      </Modal>
+    )
+  }
+
   return (
     <Modal
       title="Table and guests"
-      text="Floor plans come with the Tables stage. For now, type the table name."
+      text="Add your floor plan on the Tables page to choose from a list."
       onClose={onClose}
-      footer={<button className="btn btn-primary" onClick={() => onSave({ tableLabel: table.trim(), guestCount: guests ? Number(guests) : null })}>Save</button>}
+      footer={<button className="btn btn-primary" onClick={() => onSave({ tableLabel: table.trim(), guestCount })}>Save</button>}
     >
       <div className="grid grid-cols-2 gap-3">
         <label className="field">Table<input autoFocus value={table} maxLength={30} onChange={(event) => setTable(event.target.value)} placeholder="T4" /></label>

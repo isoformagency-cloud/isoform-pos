@@ -12,7 +12,8 @@ workspace.get('/pos-settings', async (c) => {
   const actor = c.get('actor')
   const settings = await tx(dbContext(actor), async (db) => {
     const { rows: [row] } = await db.query(
-      `select display_name, upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text
+      `select display_name, upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text,
+              uses_kitchen, kitchen_delay_minutes
          from app.tenants where id = $1`,
       [actor.tenantId],
     )
@@ -88,11 +89,23 @@ workspace.get('/alerts', async (c) => {
         where o.status = 'open' and o.branch_id = any($1::uuid[])`,
       [actor.branchIds],
     )
-    const counts = { runningOrders: 0, heldOrders: 0, leftoverOrders: 0, unpaidBills: 0, paymentsToVerify: 0 }
+    const counts = { runningOrders: 0, heldOrders: 0, leftoverOrders: 0, unpaidBills: 0, paymentsToVerify: 0, kitchenActive: 0, kitchenDelayed: 0 }
     if (can(actor.role, 'orders.read')) {
       counts.runningOrders = orders.running
       counts.heldOrders = orders.held
       counts.leftoverOrders = orders.leftover
+    }
+    if (can(actor.role, 'kitchen.read')) {
+      const { rows: [row] } = await db.query(
+        `select count(*)::int as active,
+                count(*) filter (where k.status in ('new', 'preparing')
+                  and k.sent_at < now() - make_interval(mins => t.kitchen_delay_minutes))::int as delayed
+           from app.kitchen_tickets k join app.tenants t on t.id = k.tenant_id
+          where k.branch_id = any($1::uuid[]) and k.status in ('new', 'preparing', 'ready')`,
+        [actor.branchIds],
+      )
+      counts.kitchenActive = row.active
+      counts.kitchenDelayed = row.delayed
     }
     if (can(actor.role, 'billing.read')) {
       const { rows: [row] } = await db.query(
