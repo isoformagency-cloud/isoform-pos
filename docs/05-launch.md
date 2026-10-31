@@ -140,3 +140,13 @@ Typical speed from the owner's PC: network 169 ms, adding an item 254 ms, issuin
 The PDF code loaded and made a PDF on the live site with nothing blocked by the security policy. The live screens were only opened as far as the sign-in page, because test logins are not typed into the live site. Signed-in screens were clicked through on a local copy.
 
 One embedded font was blocked by the security policy. It covers only rare Cyrillic characters, so nothing visible was affected, and fonts are no longer embedded.
+
+## Live check, 31 October 2026, tables and kitchen
+
+The live site has the Tables and Kitchen screens. The live check passed in full, including Send to kitchen, the kitchen board, ticket moves, item ticks, the floor plan and reservations. The request limit blocked 3 of 33 requests, as expected.
+
+Typical speed from the owner's PC: network 155 ms, starting an order 207 ms, adding an item 205 ms, issuing a bill 316 ms, recording a payment 301 ms.
+
+Live updates were timed on the live site over 4 changes. A listening screen heard each change 0.3 to 0.5 seconds after it was made, as soon as the save finished.
+
+The live screens were only opened as far as the sign-in page, because test logins are not typed into the live site. Signed-in screens were clicked through on a local copy.
