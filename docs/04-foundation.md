@@ -162,5 +162,7 @@ Checked on screen: selling a Dosa with a recipe took coffee beans from 4 kg to 3
 
 Tests: 262 of 262 API tests in one full run of 36 minutes, down from 50 despite 33 more tests, because of the sign-in fix. 94 of 94 database rules, though those checks don't yet attack the new tables. The API tests cover them: other businesses' customers, expenses and stock stay hidden. Vitest warned once that the billing test worker was slow to exit, and every test still passed.
 
-Known limits: a recipe can't vary by size. The receipt image under the live security policy and the speed gain on the live site still need checking after deployment.
+Known limits: a recipe can't vary by size.
+
+Live check after deployment: every step of `scripts/check-live.ts` passed, which now covers these pages. A sale with a recipe took 0.5 kg of coffee beans off live stock, and a receipt photo loaded in a browser from the live site while an image from an unlisted address was blocked. From this PC, where the network alone takes about 124 ms, the stock page took a median of 145 ms and listing open orders 141 ms.
 

@@ -87,8 +87,48 @@ line('daily report', await get(`/reports/daily?from=${paid.business_date}`), 200
 line('order timeline', await get(`/orders/${id}/timeline`), 200)
 line('order export', await get('/orders/export?status=finalized'), 200)
 
-console.log('--- staff PIN login')
+console.log('--- customers, expenses and stock')
 const branchId = JSON.parse(me.text).branchIds[0]
+const atBranch = (path: string) => timed(`/api/v1${path}`, { headers: { ...auth, 'x-branch-id': branchId } })
+line('customers', await get('/customers'), 200)
+line('customer summary', await get('/customers/summary'), 200)
+line('suppliers', await get('/suppliers'), 200)
+line('stock history', await atBranch('/inventory/moves'), 200)
+line('expense summary', await atBranch('/expenses/summary'), 200)
+const expenseList = await atBranch('/expenses')
+line('expenses', expenseList, 200)
+const withReceipt = JSON.parse(expenseList.text).items.find((row: any) => row.has_receipt)
+if (withReceipt) {
+  const receipt = await atBranch(`/expenses/${withReceipt.id}/receipt`)
+  line('receipt link', receipt, 200)
+  const { url } = JSON.parse(receipt.text)
+  const photo = await fetch(url)
+  console.log(`${photo.ok && photo.headers.get('content-type') === 'image/jpeg' ? 'PASS' : 'FAIL'} receipt photo: ${photo.status} ${photo.headers.get('content-type')}`)
+  console.log(`receipt url ${url}`)
+} else console.log('SKIP receipt: no expense has a photo')
+
+const recipes = await Promise.all(menu.products.filter((p: any) => p.is_active).map(async (product: any) => (
+  { product, lines: JSON.parse((await get(`/products/${product.id}/recipe`)).text).lines }
+)))
+const recipe = recipes.find((row) => row.lines.length > 0 && row.product.variants.some((v: any) => v.isAvailable))
+if (recipe) {
+  const level = async () => JSON.parse((await atBranch('/inventory')).text).items.find((row: any) => row.id === recipe.lines[0].stock_item_id)
+  const before = await level()
+  const saleId = crypto.randomUUID()
+  await write('/orders', { id: saleId, orderType: 'takeaway', notes: 'Live check, stock' })
+  const saleItem = await write(`/orders/${saleId}/items`, { id: crypto.randomUUID(), variantId: recipe.product.variants.find((v: any) => v.isAvailable).id })
+  const saleConfirm = await write(`/orders/${saleId}/confirm`, { version: JSON.parse(saleItem.text).version })
+  const saleInvoice = crypto.randomUUID()
+  const saleBill = await write(`/orders/${saleId}/finalize`, { version: JSON.parse(saleConfirm.text).version, invoices: [{ id: saleInvoice }] })
+  line('bill with a recipe', saleBill, 201)
+  const saleTotal = JSON.parse(saleBill.text).invoices?.[0]?.grandTotal
+  await write('/payments', { id: crypto.randomUUID(), methodId: upi, amount: saleTotal, allocations: [{ invoiceId: saleInvoice, amount: saleTotal }] })
+  const after = await level()
+  const taken = Number(before.quantity) - Number(after.quantity)
+  console.log(`${taken === Number(recipe.lines[0].quantity) ? 'PASS' : 'FAIL'} sale took ${taken} ${before.unit} of ${before.name}, ${before.quantity} to ${after.quantity}`)
+} else console.log('SKIP stock deduction: no menu item has a recipe')
+
+console.log('--- staff PIN login')
 const device = await write('/devices', { branchId, name: 'Live check' })
 line('register device', device, 201)
 const staff = await write('/staff', { displayName: 'Live Check', role: 'cashier', pin: '7391', branchIds: [branchId] })
@@ -111,6 +151,9 @@ stats('network only (health)', pings)
 const reads: number[] = []
 for (let i = 0; i < 12; i += 1) reads.push((await get('/orders?status=open')).ms)
 stats('list open orders', reads)
+const stockReads: number[] = []
+for (let i = 0; i < 12; i += 1) stockReads.push((await atBranch('/inventory')).ms)
+stats('stock page', stockReads)
 const starts: number[] = []
 const adds: number[] = []
 for (let i = 0; i < 6; i += 1) {
