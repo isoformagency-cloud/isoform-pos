@@ -42,9 +42,9 @@ export function useAsk() {
     new Promise<Record<string, string> | null>((resolve) => setRequest({ title, fields, confirm, resolve }))
 
   const node = request && (
-    <dialog ref={dialog} onCancel={() => finish(null)} className="m-auto w-[min(24rem,calc(100vw-2rem))] rounded-2xl p-5 backdrop:bg-ink/40">
+    <dialog ref={dialog} onCancel={() => finish(null)} className="sheet m-auto w-[min(24rem,calc(100vw-2rem))] rounded-2xl bg-white p-5 text-ink shadow-float">
       <form onSubmit={submit} className="grid gap-3">
-        <h2 className="text-xl">{request.title}</h2>
+        <h2 className="text-lg">{request.title}</h2>
         {request.fields.map((field, index) => (
           <label key={field.name} className="field">
             {field.label}

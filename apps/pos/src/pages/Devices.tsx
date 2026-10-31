@@ -50,7 +50,7 @@ export function Devices() {
         </form>
       )}
       <Loading ready={!devices.isPending} error={devices.error}>
-        <ul className="card divide-y divide-line">
+        <ul className="card divide-y divide-line-soft overflow-hidden">
           {devices.data?.items.length === 0 && <li className="p-6 text-center text-ink-soft">No devices yet.</li>}
           {devices.data?.items.map((device: any) => (
             <li key={device.id} className="flex items-center justify-between gap-3 p-4">

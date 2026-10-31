@@ -2,18 +2,11 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
-import { Loading, Notice, PageHeader } from '../components/ui'
+import { Badge, Loading, Notice, PageHeader, Segmented, type Tone } from '../components/ui'
 import { api } from '../lib/api'
+import { money } from '../lib/format'
 
-const money = (value: string) => `₹${value}`
-
-const STATUS_STYLE: Record<string, string> = {
-  recorded: 'bg-wait-tint text-wait',
-  pending: 'bg-wait-tint text-wait',
-  confirmed: 'bg-ok-tint text-ok',
-  failed: 'bg-line text-ink-mid',
-  voided: 'bg-line text-ink-mid',
-}
+const STATUS_TONE: Record<string, Tone> = { recorded: 'wait', pending: 'wait', confirmed: 'ok', failed: 'neutral', voided: 'neutral' }
 
 const FILTERS = [
   ['recorded', 'To verify'],
@@ -77,12 +70,15 @@ export function Payments({ me }: { me: Me }) {
     <>
       {node}
       <PageHeader title="Payments" text="Recorded means it was entered. Confirmed means someone checked it arrived." />
-      <div className="mb-4 flex gap-2">
-        {FILTERS.map(([value, label]) => (
-          <button key={label} className={`btn !min-h-10 ${filter === value ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setFilter(value); setOpenId(null) }}>{label}</button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Segmented
+          label="Payment filter"
+          value={filter || 'all'}
+          options={FILTERS.map(([value, label]) => ({ value: value || 'all', label }))}
+          onChange={(value) => { setFilter(value === 'all' ? '' : value); setOpenId(null) }}
+        />
         {canVerify && filter === 'recorded' && list.data?.items.length > 1 && (
-          <button className="btn btn-secondary !min-h-10 ml-auto" disabled={act.isPending} onClick={confirmAll}>Confirm all</button>
+          <button className="btn btn-secondary ml-auto" disabled={act.isPending} onClick={confirmAll}>Confirm all</button>
         )}
       </div>
       {act.error && <div className="mb-3"><Notice>{act.error.message}</Notice></div>}
@@ -91,7 +87,7 @@ export function Payments({ me }: { me: Me }) {
         error={list.error}
         empty={list.data?.items.length === 0 ? (filter === 'recorded' ? 'Nothing is waiting to be verified.' : 'No payments here yet.') : undefined}
       >
-        <ul className="card divide-y divide-line">
+        <ul className="card divide-y divide-line-soft overflow-hidden">
           {list.data?.items.map((item: any) => (
             <li key={item.id}>
               <button className="flex w-full flex-wrap items-center justify-between gap-3 p-4 text-left hover:bg-paper-soft" aria-expanded={openId === item.id} onClick={() => setOpenId(openId === item.id ? null : item.id)}>
@@ -99,20 +95,20 @@ export function Payments({ me }: { me: Me }) {
                   <span className="font-medium">{item.method_name}</span>
                   <span className="block text-sm text-ink-soft">{item.reference ? `${item.reference} · ` : ''}{item.recorded_by_name}</span>
                 </span>
-                <span className="text-right">
-                  <span className="font-mono">{money(item.amount)}</span>
-                  <span className={`ml-2 rounded-md px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLE[item.status]}`}>{item.status}</span>
-                  {item.refund_state !== 'none' && <span className="block text-xs text-wait">{item.refund_state.replace('_', ' ')}</span>}
+                <span className="flex items-center gap-2 text-right">
+                  {item.refund_state !== 'none' && <Badge tone="wait">{item.refund_state.replace('_', ' ')}</Badge>}
+                  <Badge tone={STATUS_TONE[item.status]}><span className="capitalize">{item.status}</span></Badge>
+                  <span className="tnum font-medium">{money(item.amount)}</span>
                 </span>
               </button>
               {openId === item.id && payment?.id === item.id && (
                 <div className="border-t border-line bg-paper-soft p-4 text-sm">
                   {payment.allocations.map((allocation: any) => (
-                    <p key={allocation.invoice_id}>Bill {allocation.number}: <span className="font-mono">{money(allocation.amount)}</span></p>
+                    <p key={allocation.invoice_id}>Bill {allocation.number}: <span className="tnum">{money(allocation.amount)}</span></p>
                   ))}
                   {payment.status_reason && <p className="mt-1 text-ink-soft">Reason: {payment.status_reason}</p>}
                   {payment.refunds.map((entry: any) => (
-                    <p key={entry.id} className="mt-1">Refund <span className="font-mono">{money(entry.amount)}</span> · {entry.status} · {entry.reason}</p>
+                    <p key={entry.id} className="mt-1">Refund <span className="tnum">{money(entry.amount)}</span> · {entry.status} · {entry.reason}</p>
                   ))}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {canVerify && payment.status === 'recorded' && <button className="btn btn-primary" onClick={() => act.mutate({ path: `/payments/${payment.id}/confirm` })}>Confirm received</button>}

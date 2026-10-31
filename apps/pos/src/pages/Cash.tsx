@@ -4,8 +4,8 @@ import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
 import { Loading, Notice, PageHeader } from '../components/ui'
 import { activeBranch, api } from '../lib/api'
+import { money } from '../lib/format'
 
-const money = (value: string) => `₹${value}`
 const MOVEMENT_NAMES: Record<string, string> = {
   sale: 'Cash sale', refund: 'Refund', paid_in: 'Cash added', paid_out: 'Paid out', safe_drop: 'Moved to safe',
   tip_in: 'Tip', tip_out: 'Tip reversed', correction: 'Correction', expense: 'Expense',
@@ -102,7 +102,7 @@ export function Cash({ me }: { me: Me }) {
             </div>
           </div>
 
-          <dl className="mt-4 grid gap-1 font-mono text-sm sm:max-w-sm">
+          <dl className="tnum mt-4 grid gap-1 text-sm sm:max-w-sm">
             <div className="flex justify-between"><dt>Opening</dt><dd>{money(current.opening_amount)}</dd></div>
             {current.running_expected && current.status === 'open' && <div className="flex justify-between"><dt>Expected now</dt><dd>{money(Number(current.running_expected).toFixed(2))}</dd></div>}
             {current.expected_amount && <div className="flex justify-between"><dt>Expected</dt><dd>{money(current.expected_amount)}</dd></div>}
@@ -118,11 +118,11 @@ export function Cash({ me }: { me: Me }) {
           {current.review_note && <p className="mt-2 text-sm text-ink-soft">Review note: {current.review_note}</p>}
 
           {current.movements.length > 0 && (
-            <ul className="mt-4 divide-y divide-line border-t border-line text-sm">
+            <ul className="mt-4 divide-y divide-line-soft border-t border-line-soft text-sm">
               {current.movements.map((movement: any) => (
                 <li key={movement.id} className="flex justify-between gap-3 py-2">
                   <span>{MOVEMENT_NAMES[movement.movement_type]}{movement.reason ? ` · ${movement.reason}` : ''} <span className="text-ink-soft">· {movement.recorded_by_name}</span></span>
-                  <span className="font-mono">{movement.direction > 0 ? '+' : '−'}{movement.amount}</span>
+                  <span className="tnum">{movement.direction > 0 ? '+' : '−'}{movement.amount}</span>
                 </li>
               ))}
             </ul>
@@ -133,12 +133,12 @@ export function Cash({ me }: { me: Me }) {
       {sessions.data?.items.length > 0 && (
         <>
           <h2 className="mb-2 text-xl">Sessions</h2>
-          <ul className="card divide-y divide-line">
+          <ul className="card divide-y divide-line-soft overflow-hidden">
             {sessions.data.items.map((item: any) => (
               <li key={item.id}>
                 <button className="flex w-full items-center justify-between gap-3 p-3 text-left text-sm hover:bg-paper-soft" onClick={() => setViewing(item.id)}>
                   <span>{item.business_date} · {item.register_name} · <span className="capitalize">{item.status}</span></span>
-                  {item.variance && Number(item.variance) !== 0 && <span className="font-mono text-wait">{item.variance}</span>}
+                  {item.variance && Number(item.variance) !== 0 && <span className="tnum text-wait">{item.variance}</span>}
                 </button>
               </li>
             ))}

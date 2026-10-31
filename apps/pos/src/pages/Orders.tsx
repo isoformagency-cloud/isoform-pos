@@ -1,464 +1,225 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bike, Lock, Minus, Plus, ShoppingBag, Smartphone, Trash2, UtensilsCrossed, type LucideIcon } from 'lucide-react'
-import { useNavigate } from 'react-router'
+import { useEffect, useState } from 'react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { Download, Lock, Pause, Plus, Receipt, Search } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import type { Me } from '../App'
-import { useAsk } from '../components/Ask'
-import { Loading, Notice, PageHeader } from '../components/ui'
-import { activeBranch, api, ApiError } from '../lib/api'
+import { OrderDrawer, paymentState } from '../components/OrderDrawer'
+import { ORDER_TYPES, TYPE_LOOK, typeName } from '../components/order-look'
+import { Badge, Empty, Notice, PageHeader, Segmented } from '../components/ui'
+import { api } from '../lib/api'
+import { dateTime, downloadCsv, localDate, money, time } from '../lib/format'
 
-const TYPES = [
-  ['dine_in', 'Dine-in'],
-  ['takeaway', 'Takeaway'],
-  ['delivery', 'Delivery'],
-  ['aggregator', 'Delivery app'],
-] as const
-
-// Colour and symbol together, so order types can be told apart without relying on colour alone.
-const TYPE_LOOK: Record<string, { icon: LucideIcon; tone: string }> = {
-  dine_in: { icon: UtensilsCrossed, tone: 'border-brand/40 bg-brand-tint text-brand-deep' },
-  takeaway: { icon: ShoppingBag, tone: 'border-wait/40 bg-wait-tint text-wait' },
-  delivery: { icon: Bike, tone: 'border-sky-700/40 bg-sky-50 text-sky-800' },
-  aggregator: { icon: Smartphone, tone: 'border-ok/40 bg-ok-tint text-ok' },
+const TABS: Record<string, string> = {
+  running: 'status=open&held=false',
+  held: 'status=open&held=true',
+  completed: 'status=finalized',
+  cancelled: 'status=cancelled',
+  all: 'status=all',
 }
 
-const typeName = (type: string) => TYPES.find(([value]) => value === type)?.[1] ?? type
-const money = (value: string) => `₹${value}`
-const stepped = (order: any, itemId: string, step: number) =>
-  String(Math.max(1, Number(order.items.find((item: any) => item.id === itemId).quantity) + step))
+const RANGES = [
+  ['all', 'All time', null],
+  ['today', 'Today', 0],
+  ['week', 'Last 7 days', 6],
+  ['month', 'Last 30 days', 29],
+] as const
+
+function StatusBadge({ order }: { order: any }) {
+  if (order.status === 'cancelled') return <Badge tone="bad">Cancelled</Badge>
+  if (order.status === 'finalized') return <Badge tone="ok">Billed</Badge>
+  if (order.held_at) return <Badge tone="wait"><Pause size={11} aria-hidden="true" /> On hold</Badge>
+  if (order.confirmed_at) return <Badge tone="brand"><Lock size={11} aria-hidden="true" /> Confirmed</Badge>
+  return <Badge tone="sky">Open</Badge>
+}
 
 export function Orders({ me }: { me: Me }) {
-  const queryClient = useQueryClient()
-  const branch = activeBranch() ?? (me.branchIds.length === 1 ? me.branchIds[0] : null)
-  const [orderId, setOrderId] = useState<string | null>(null)
-  const [category, setCategory] = useState<string | null>(null)
-  const [picking, setPicking] = useState<any | null>(null)
-  const [error, setError] = useState('')
-  const { ask, node } = useAsk()
   const navigate = useNavigate()
-  const [secondBill, setSecondBill] = useState<string[]>([])
-  const canBill = me.permissions.includes('billing.write')
-  const canWrite = me.permissions.includes('orders.write')
-  const canDiscount = me.permissions.includes('orders.discount')
-  const canCancel = me.permissions.includes('orders.cancel')
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') ?? 'running'
+  const openId = params.get('open')
+  const [text, setText] = useState(params.get('q') ?? '')
+  const [term, setTerm] = useState(text)
+  const [type, setType] = useState('')
+  const [range, setRange] = useState<string>('all')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
 
-  const list = useQuery({ queryKey: ['orders', branch], queryFn: () => api('/orders?status=open'), enabled: Boolean(branch), refetchInterval: 15000 })
-  const menu = useQuery({ queryKey: ['menu', branch], queryFn: () => api(`/menu?branchId=${branch}`), enabled: Boolean(branch) })
-  const order = useQuery({ queryKey: ['order', orderId], queryFn: () => api(`/orders/${orderId}`), enabled: Boolean(orderId) })
+  const canOrder = me.permissions.includes('orders.write')
+  const canExport = me.permissions.includes('reports.read')
 
-  const quote = useQuery({
-    queryKey: ['quote', orderId, order.data?.version],
-    queryFn: () => api(`/orders/${orderId}/quote`),
-    enabled: Boolean(orderId && order.data?.confirmed_at && order.data?.status === 'open'),
-  })
-
-  const issue = useMutation({
-    mutationFn: () => {
-      const items = order.data.items.filter((item: any) => item.status === 'active')
-      const part = (list: any[]) => ({ id: crypto.randomUUID(), items: list.map((item) => ({ orderItemId: item.id, quantity: item.quantity })) })
-      const second = items.filter((item: any) => secondBill.includes(item.id))
-      const first = items.filter((item: any) => !secondBill.includes(item.id))
-      return api(`/orders/${orderId}/finalize`, {
-        method: 'POST',
-        body: { version: order.data.version, invoices: second.length && first.length ? [part(first), part(second)] : [part(items)] },
-      })
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['orders'] })
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      navigate(data.invoices.length === 1 ? `/invoices/${data.invoices[0].id}` : '/invoices')
-    },
-    onError: (failure) => {
-      setError(failure.message)
-      queryClient.invalidateQueries({ queryKey: ['order', orderId] })
-    },
-  })
-
-  const refreshList = () => queryClient.invalidateQueries({ queryKey: ['orders'] })
-
-  // Changes run one at a time, and each reads the newest order when it starts, so quick taps all count.
-  const change = useMutation({
-    scope: { id: 'order-change' },
-    mutationFn: ({ path, method = 'POST', body }: { path: string; method?: string; body?: (latest: any) => object }) => {
-      const latest = queryClient.getQueryData<any>(['order', orderId])
-      return api(`/orders/${orderId}${path}`, { method, body: body?.(latest) })
-    },
-    onSuccess: (data) => {
-      setError('')
-      queryClient.setQueryData(['order', data.id], data)
-      refreshList()
-    },
-    onError: (failure) => {
-      setError(failure.message)
-      if (failure instanceof ApiError && failure.code === 'stale_order') queryClient.invalidateQueries({ queryKey: ['order', orderId] })
-    },
-  })
-
-  const start = useMutation({
-    mutationFn: (body: object) => api('/orders', { method: 'POST', body: { id: crypto.randomUUID(), ...body } }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['order', data.id], data)
-      setOrderId(data.id)
-      setError('')
-      refreshList()
-    },
-    onError: (failure) => setError(failure.message),
-  })
-
-  const current = order.data
-
-  if (!branch) {
-    return (
-      <>
-        <PageHeader title="Orders" />
-        <Notice>Choose a branch from the menu to take orders.</Notice>
-      </>
-    )
-  }
-
-  async function newOrder(type: string) {
-    if (type === 'aggregator') {
-      const answer = await ask('Delivery app order', [
-        { name: 'app', label: 'Delivery app', required: true, defaultValue: 'Swiggy' },
-        { name: 'reference', label: 'Their order number' },
-      ], 'Start order')
-      if (answer) start.mutate({ orderType: type, aggregator: answer.app, aggregatorReference: answer.reference || undefined })
-      return
+  const change = (next: Record<string, string | null>) => {
+    const merged = new URLSearchParams(params)
+    for (const [key, value] of Object.entries(next)) {
+      if (value) merged.set(key, value)
+      else merged.delete(key)
     }
-    if (type === 'dine_in') {
-      const answer = await ask('Dine-in order', [{ name: 'table', label: 'Table (optional)' }], 'Start order')
-      if (answer) start.mutate({ orderType: type, tableLabel: answer.table || undefined })
-      return
-    }
-    start.mutate({ orderType: type })
+    setParams(merged, { replace: true })
   }
 
-  function addVariant(variant: any, addonIds: string[] = []) {
-    const same = order.data?.items.find((item: any) => item.variant_id === variant.id && item.status === 'active' && item.addons.length === 0)
-    if (same && addonIds.length === 0) {
-      change.mutate({
-        path: `/items/${same.id}`,
-        method: 'PATCH',
-        body: (latest) => ({ version: latest.version, quantity: stepped(latest, same.id, 1) }),
-      })
-    } else {
-      change.mutate({ path: '/items', body: () => ({ id: crypto.randomUUID(), variantId: variant.id, addonIds }) })
-    }
-    setPicking(null)
-  }
+  useEffect(() => {
+    const wait = setTimeout(() => setTerm(text.trim()), 250)
+    return () => clearTimeout(wait)
+  }, [text])
 
-  function tapProduct(product: any) {
-    const variants = product.variants.filter((variant: any) => variant.isAvailable)
-    if (variants.length === 1 && product.addon_ids.length === 0) addVariant(variants[0])
-    else setPicking(product)
-  }
+  const daysBack = RANGES.find(([value]) => value === range)?.[2]
+  const query = [
+    term ? 'status=all' : TABS[tab],
+    term ? `q=${encodeURIComponent(term)}` : '',
+    type ? `type=${type}` : '',
+    daysBack !== null && daysBack !== undefined ? `from=${localDate(daysBack)}` : '',
+  ].filter(Boolean).join('&')
 
-  async function discount() {
-    const answer = await ask('Add a discount', [
-      { name: 'value', label: 'Rupees, or a percentage such as 10%', required: true },
-      { name: 'reason', label: 'Reason', required: true },
-    ], 'Apply')
-    if (!answer) return
-    const kind = answer.value.includes('%') ? 'percent' : 'amount'
-    const value = answer.value.replace('%', '').trim()
-    change.mutate({ path: '/discounts', body: () => ({ id: crypto.randomUUID(), kind, value, reason: answer.reason }) })
-  }
+  const counts = useQuery({ queryKey: ['orders', 'counts'], queryFn: () => api('/orders/counts', { branch: true }), refetchInterval: 20000 })
+  const list = useInfiniteQuery({
+    queryKey: ['orders', 'list', query],
+    queryFn: ({ pageParam }) => api(`/orders?${query}${pageParam ? `&before=${encodeURIComponent(pageParam)}` : ''}`, { branch: true }),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.nextBefore ?? undefined,
+    refetchInterval: 20000,
+  })
+  const rows: any[] = list.data?.pages.flatMap((page) => page.items) ?? []
 
-  function confirmOrder() {
-    change.mutate({ path: '/confirm', body: (latest) => ({ version: latest.version }) })
-  }
+  const tabs = [
+    { value: 'running', label: 'Running', count: counts.data?.running },
+    { value: 'held', label: 'On hold', count: counts.data?.held },
+    { value: 'completed', label: 'Completed', count: counts.data?.completed },
+    { value: 'cancelled', label: 'Cancelled', count: counts.data?.cancelled },
+    { value: 'all', label: 'All' },
+  ]
 
-  function deleteEmpty() {
-    change.mutate({ path: '/cancel', body: (latest) => ({ version: latest.version }) }, { onSuccess: () => setOrderId(null) })
-  }
-
-  async function serviceCharge() {
-    const answer = await ask('Voluntary service charge', [
-      { name: 'percent', label: 'Percent (use 0 to remove)', required: true, defaultValue: current?.service_charge_percent ?? '0', inputMode: 'decimal' },
-    ], 'Save')
-    if (answer) change.mutate({ path: '', method: 'PATCH', body: (latest) => ({ version: latest.version, serviceChargePercent: answer.percent }) })
-  }
-
-  async function customer() {
-    const answer = await ask('Who is this bill for?', [
-      { name: 'name', label: 'Name', required: true, defaultValue: current?.customer_name ?? '' },
-      { name: 'phone', label: '10-digit mobile', required: true, inputMode: 'numeric' },
-    ], 'Save')
-    if (!answer) return
+  async function exportCsv() {
+    setExporting(true)
+    setExportError('')
     try {
-      const saved = await api('/customers', { method: 'POST', body: answer })
-      change.mutate({ path: '', method: 'PATCH', body: (latest) => ({ version: latest.version, customerId: saved.id }) })
+      const { items } = await api(`/orders/export?${query}`, { branch: true })
+      downloadCsv(`orders-${localDate()}.csv`, [
+        ['Order', 'Date', 'Time', 'Type', 'Table', 'Customer', 'Phone', 'Items', 'Amount', 'Status', 'Still owed', 'Bill numbers'],
+        ...items.map((item: any) => [
+          item.display_number, item.business_date, time(item.created_at), typeName(item.order_type), item.table_label, item.customer_name,
+          item.customer_phone, item.item_count, item.amount, item.status, item.outstanding, item.bill_numbers?.join(' '),
+        ]),
+      ])
     } catch (failure) {
-      setError((failure as Error).message)
+      setExportError((failure as Error).message)
+    } finally {
+      setExporting(false)
     }
   }
-
-  async function issueBill() {
-    if (await ask('Issue this bill?', [], 'Issue bill')) issue.mutate()
-  }
-
-  async function remove(item: any) {
-    const answer = await ask(`Remove ${item.product_name}?`, [{ name: 'reason', label: 'Reason', required: true }], 'Remove')
-    if (answer) change.mutate({ path: `/items/${item.id}/void`, body: (latest) => ({ version: latest.version, reason: answer.reason }) })
-  }
-
-  async function cancel() {
-    const answer = await ask('Cancel this order?', [{ name: 'reason', label: 'Reason', required: true }], 'Cancel order')
-    if (answer) change.mutate({ path: '/cancel', body: (latest) => ({ version: latest.version, reason: answer.reason }) }, { onSuccess: () => setOrderId(null) })
-  }
-
-  const products = (menu.data?.products ?? []).filter((product: any) => product.is_active && (!category || product.category_id === category))
-  const categories = (menu.data?.categories ?? []).filter((item: any) => item.is_active)
-  const open = current?.status === 'open'
-  const confirmed = Boolean(current?.confirmed_at)
-  const canEdit = open && !confirmed && canWrite
-  const empty = !current?.items.some((item: any) => item.status === 'active')
-  const CurrentIcon = current ? TYPE_LOOK[current.order_type].icon : null
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_22rem]">
-      {node}
-      <div className="min-w-0">
-        <PageHeader
-          title="Orders"
-          action={canWrite && (
-            <div className="flex flex-wrap gap-2">
-              {TYPES.map(([value, label]) => {
-                const { icon: Icon, tone } = TYPE_LOOK[value]
-                return (
-                  <button key={value} className={`btn border ${tone}`} disabled={start.isPending} onClick={() => newOrder(value)}>
-                    <Icon size={16} aria-hidden="true" /> {label}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        />
+    <>
+      <PageHeader
+        title="Orders"
+        text="Every order: running, on hold, billed and cancelled."
+        action={(
+          <div className="flex flex-wrap gap-2">
+            {canExport && <button className="btn btn-secondary" disabled={exporting || rows.length === 0} onClick={exportCsv}><Download size={16} aria-hidden="true" /> {exporting ? 'Preparing…' : 'Export CSV'}</button>}
+            {canOrder && <Link to="/pos?new=1" className="btn btn-primary"><Plus size={16} aria-hidden="true" /> New order</Link>}
+          </div>
+        )}
+      />
 
-        <Loading ready={!list.isPending} error={list.error}>
-          <ul className="mb-5 flex gap-2 overflow-x-auto pb-1">
-            {list.data?.items.length === 0 && <li className="text-sm text-ink-soft">No open orders. Start one above.</li>}
-            {list.data?.items.map((item: any) => {
-              const { icon: Icon, tone } = TYPE_LOOK[item.order_type]
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <Segmented label="Order status" value={term ? 'all' : tab} options={tabs} onChange={(value) => { setText(''); setTerm(''); change({ tab: value === 'running' ? null : value, q: null }) }} />
+      </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <label className="relative min-w-52 flex-1 sm:max-w-sm">
+          <span className="sr-only">Search orders</span>
+          <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-faint" aria-hidden="true" />
+          <input value={text} onChange={(event) => setText(event.target.value)} className="input !min-h-10 !pl-9 !text-sm" placeholder="Order number, customer, phone, bill or table" />
+        </label>
+        <label>
+          <span className="sr-only">Order type</span>
+          <select className="input !min-h-10 !w-auto !text-sm" value={type} onChange={(event) => setType(event.target.value)}>
+            <option value="">All types</option>
+            {ORDER_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Period</span>
+          <select className="input !min-h-10 !w-auto !text-sm" value={range} onChange={(event) => setRange(event.target.value)}>
+            {RANGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {exportError && <div className="mb-3"><Notice>{exportError}</Notice></div>}
+      {list.error && <Notice>{list.error.message}</Notice>}
+      {list.isPending && <p className="py-6 text-sm text-ink-soft">Loading orders…</p>}
+      {list.data && rows.length === 0 && (
+        <Empty
+          icon={Receipt}
+          title={term ? `No orders match “${term}”.` : 'No orders here.'}
+          text={term ? 'Try a phone number or bill number.' : undefined}
+          action={!term && canOrder ? <Link to="/pos?new=1" className="btn btn-secondary">Start an order</Link> : undefined}
+        />
+      )}
+
+      {rows.length > 0 && (
+        <>
+          <div className="card hidden overflow-hidden md:block">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Order</th><th>Table / type</th><th>Customer</th><th className="!text-right">Items</th><th className="!text-right">Amount</th><th>Payment</th><th>Status</th><th className="!text-right">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((order) => {
+                  const { icon: Icon, soft } = TYPE_LOOK[order.order_type]
+                  const paid = paymentState(order)
+                  return (
+                    <tr key={order.id} data-link tabIndex={0} onClick={() => change({ open: order.id })} onKeyDown={(event) => { if (event.key === 'Enter') change({ open: order.id }) }}>
+                      <td className="font-mono font-medium">#{order.display_number}</td>
+                      <td><span className={`flex items-center gap-1.5 ${soft}`}><Icon size={15} aria-hidden="true" />{order.table_label || typeName(order.order_type)}</span></td>
+                      <td className="max-w-40 truncate">{order.customer_name ?? <span className="text-ink-faint">Walk-in</span>}</td>
+                      <td className="tnum text-right">{order.item_count}</td>
+                      <td className="tnum text-right font-medium">{money(order.amount)}</td>
+                      <td>{paid ? <Badge tone={paid.tone}>{paid.label}</Badge> : <span className="text-ink-faint">—</span>}</td>
+                      <td><StatusBadge order={order} /></td>
+                      <td className="tnum text-right whitespace-nowrap text-ink-soft">{dateTime(order.created_at)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <ul className="grid gap-2 md:hidden">
+            {rows.map((order) => {
+              const { icon: Icon, soft } = TYPE_LOOK[order.order_type]
+              const paid = paymentState(order)
               return (
-                <li key={item.id}>
-                  <button
-                    aria-pressed={item.id === orderId}
-                    className={`min-h-14 min-w-32 rounded-xl border px-3 py-1.5 text-left text-sm ${tone} ${item.id === orderId ? 'ring-2 ring-ink ring-offset-1' : ''}`}
-                    onClick={() => setOrderId(item.id)}
-                  >
-                    <span className="flex items-center gap-1.5 font-medium">
-                      <Icon size={15} aria-hidden="true" />
-                      <span className="font-mono">#{item.display_number}</span>
-                      {item.table_label}
-                      {item.confirmed_at && <Lock size={12} aria-label="Confirmed" className="ml-auto" />}
+                <li key={order.id}>
+                  <button className="card w-full p-3 text-left" onClick={() => change({ open: order.id })}>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 font-medium">
+                        <Icon size={15} className={soft} aria-hidden="true" />
+                        <span className="font-mono">#{order.display_number}</span>
+                        {order.table_label}
+                      </span>
+                      <span className="tnum font-medium">{money(order.amount)}</span>
                     </span>
-                    <span className="block whitespace-nowrap text-xs">{typeName(item.order_type)} · {item.item_count} {item.item_count === 1 ? 'item' : 'items'}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-ink-soft">
+                      <StatusBadge order={order} />
+                      {paid && <Badge tone={paid.tone}>{paid.label}</Badge>}
+                      <span>{order.customer_name ?? 'Walk-in'} · {dateTime(order.created_at)}</span>
+                    </span>
                   </button>
                 </li>
               )
             })}
           </ul>
-        </Loading>
 
-        {current && canEdit && (
-          <>
-            <div className="mb-3 flex gap-2 overflow-x-auto pb-1 text-sm">
-              <button className={`btn !min-h-10 ${!category ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setCategory(null)}>All</button>
-              {categories.map((item: any) => (
-                <button key={item.id} className={`btn !min-h-10 ${category === item.id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setCategory(item.id)}>{item.name}</button>
-              ))}
-            </div>
-            {products.length === 0 && <p className="text-ink-soft">No items here yet. Add them on the Menu page.</p>}
-            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-              {products.map((product: any) => {
-                const available = product.variants.some((variant: any) => variant.isAvailable)
-                return (
-                  <li key={product.id}>
-                    <button
-                      disabled={!available || change.isPending}
-                      className="card min-h-20 w-full p-3 text-left disabled:opacity-50"
-                      onClick={() => tapProduct(product)}
-                    >
-                      <span className="block font-medium">{product.name}</span>
-                      <span className="font-mono text-sm text-ink-soft">{available ? money(product.variants.find((v: any) => v.isAvailable).price) : 'Sold out'}</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </>
-        )}
-      </div>
-
-      <aside className="card self-start p-4 xl:sticky xl:top-5">
-        {!current && <p className="text-ink-soft">Select or start an order.</p>}
-        {current && (
-          <>
-            <p className="flex items-center gap-1.5 text-sm text-ink-soft">
-              {CurrentIcon && <CurrentIcon size={14} aria-hidden="true" />}
-              {typeName(current.order_type)}{current.aggregator ? ` · ${current.aggregator}` : ''}
-            </p>
-            <h2 className="text-xl">Order #{current.display_number}{current.table_label ? ` · ${current.table_label}` : ''}</h2>
-
-            {error && <div className="mt-3"><Notice>{error}</Notice></div>}
-
-            {picking && (
-              <PickOptions
-                product={picking}
-                addons={(menu.data?.addons ?? []).filter((addon: any) => addon.is_active && picking.addon_ids.includes(addon.id))}
-                onAdd={(variant, addonIds) => addVariant(variant, addonIds)}
-                onClose={() => setPicking(null)}
-              />
-            )}
-
-            <ul className="mt-3 divide-y divide-line">
-              {current.items.filter((item: any) => item.status === 'active').length === 0 && <li className="py-3 text-sm text-ink-soft">No items yet.</li>}
-              {current.items.filter((item: any) => item.status === 'active').map((item: any) => (
-                <li key={item.id} className="py-2.5 text-sm">
-                  <div className="flex justify-between gap-3">
-                    <span className="font-medium">{item.product_name}{item.variant_name !== 'Regular' ? ` · ${item.variant_name}` : ''}</span>
-                    <span className="font-mono">{money(item.line_total)}</span>
-                  </div>
-                  {item.addons.map((addon: any) => <p key={addon.id} className="text-xs text-ink-soft">+ {addon.name}</p>)}
-                  {canEdit && (
-                    <div className="mt-1 flex items-center gap-1">
-                      <button
-                        aria-label={`One less ${item.product_name}`}
-                        className="btn btn-secondary !min-h-10 !px-3"
-                        disabled={Number(item.quantity) <= 1}
-                        onClick={() => change.mutate({ path: `/items/${item.id}`, method: 'PATCH', body: (latest) => ({ version: latest.version, quantity: stepped(latest, item.id, -1) }) })}
-                      >
-                        <Minus size={14} aria-hidden="true" />
-                      </button>
-                      <span className="w-8 text-center font-mono">{Number(item.quantity)}</span>
-                      <button
-                        aria-label={`One more ${item.product_name}`}
-                        className="btn btn-secondary !min-h-10 !px-3"
-                        onClick={() => change.mutate({ path: `/items/${item.id}`, method: 'PATCH', body: (latest) => ({ version: latest.version, quantity: stepped(latest, item.id, 1) }) })}
-                      >
-                        <Plus size={14} aria-hidden="true" />
-                      </button>
-                      <button aria-label={`Remove ${item.product_name}`} className="btn !min-h-10 ml-auto !px-3 text-ink-soft" onClick={() => remove(item)}>
-                        <Trash2 size={15} aria-hidden="true" />
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            <dl className="mt-2 space-y-1 border-t border-line pt-3 font-mono text-sm">
-              <div className="flex justify-between"><dt>Subtotal</dt><dd>{money(current.subtotal)}</dd></div>
-              {current.discounts.map((item: any) => (
-                <div key={item.id} className="flex justify-between gap-2 text-ink-soft">
-                  <dt>Discount ({item.kind === 'percent' ? `${Number(item.value)}%` : money(item.value)})</dt>
-                  {open && canDiscount && (
-                    <dd><button className="underline" onClick={() => change.mutate({ path: `/discounts/${item.id}`, method: 'DELETE' })}>Remove</button></dd>
-                  )}
-                </div>
-              ))}
-              <div className="flex justify-between font-medium"><dt>Before tax</dt><dd>{money(current.after_discount)}</dd></div>
-            </dl>
-            <p className="mt-1 text-xs text-ink-soft">Tax is added when the bill is created.</p>
-
-            {open && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {!confirmed && !empty && canWrite && <button className="btn btn-primary w-full" disabled={change.isPending} onClick={confirmOrder}>Confirm order</button>}
-                {confirmed && <p className="w-full text-sm text-ink-soft"><Lock size={13} className="mr-1 inline" aria-hidden="true" />Confirmed. Items can’t be changed. {canDiscount ? 'You can still add a discount.' : 'A manager can still add a discount.'}</p>}
-                {canDiscount && !empty && <button className="btn btn-secondary" onClick={discount}>Discount</button>}
-                {!confirmed && !empty && canWrite && <button className="btn btn-secondary" onClick={serviceCharge}>Service charge</button>}
-                {canBill && <button className="btn btn-secondary" onClick={customer}>{current.customer_name ?? 'Add customer'}</button>}
-                {empty && canWrite && <button className="btn btn-secondary" disabled={change.isPending} onClick={deleteEmpty}>Delete order</button>}
-                {!empty && (confirmed ? canCancel : canWrite) && <button className="btn btn-secondary" onClick={cancel}>Cancel order</button>}
-              </div>
-            )}
-
-            {open && confirmed && canBill && (
-              <section className="mt-3 rounded-xl bg-paper-soft p-3 ring-1 ring-line">
-                {quote.error && <Notice>{quote.error.message}</Notice>}
-                {quote.isPending && <p className="text-sm text-ink-soft">Calculating…</p>}
-                {quote.data?.bill && (
-                  <>
-                    <dl className="space-y-1 font-mono text-sm">
-                      <div className="flex justify-between"><dt>Taxable value</dt><dd>{money(quote.data.bill.taxableTotal)}</dd></div>
-                      <div className="flex justify-between"><dt>CGST</dt><dd>{money(quote.data.bill.cgstTotal)}</dd></div>
-                      <div className="flex justify-between"><dt>SGST</dt><dd>{money(quote.data.bill.sgstTotal)}</dd></div>
-                      {Number(quote.data.bill.roundOff) !== 0 && <div className="flex justify-between"><dt>Round off</dt><dd>{quote.data.bill.roundOff}</dd></div>}
-                      <div className="flex justify-between border-t border-ink pt-1 text-base font-semibold"><dt>Total</dt><dd>{money(quote.data.bill.grandTotal)}</dd></div>
-                    </dl>
-                    {current.items.filter((item: any) => item.status === 'active').length > 1 && (
-                      <fieldset className="mt-2 border-t border-line pt-2 text-sm">
-                        <legend className="text-xs text-ink-soft">Split: tick items for a second bill</legend>
-                        {current.items.filter((item: any) => item.status === 'active').map((item: any) => (
-                          <label key={item.id} className="flex min-h-10 items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={secondBill.includes(item.id)}
-                              onChange={(event) => setSecondBill(event.target.checked ? [...secondBill, item.id] : secondBill.filter((id) => id !== item.id))}
-                            />
-                            {item.product_name}
-                          </label>
-                        ))}
-                      </fieldset>
-                    )}
-                    <button className="btn btn-primary mt-2 w-full" disabled={issue.isPending} onClick={issueBill}>
-                      {issue.isPending ? 'Issuing…' : 'Issue bill'}
-                    </button>
-                  </>
-                )}
-              </section>
-            )}
-          </>
-        )}
-      </aside>
-    </div>
-  )
-}
-
-function PickOptions({ product, addons, onAdd, onClose }: {
-  product: any
-  addons: any[]
-  onAdd: (variant: any, addonIds: string[]) => void
-  onClose: () => void
-}) {
-  const variants = product.variants.filter((variant: any) => variant.isAvailable)
-  const [variantId, setVariantId] = useState<string>(variants[0]?.id)
-  const [chosen, setChosen] = useState<string[]>([])
-
-  return (
-    <div className="mt-3 rounded-xl bg-paper-soft p-3 ring-1 ring-line">
-      <p className="font-medium">{product.name}</p>
-      <fieldset className="mt-2 grid gap-1 text-sm">
-        <legend className="sr-only">Size</legend>
-        {variants.map((variant: any) => (
-          <label key={variant.id} className="flex min-h-10 items-center justify-between gap-2">
-            <span><input type="radio" name="size" checked={variant.id === variantId} onChange={() => setVariantId(variant.id)} /> {variant.name}</span>
-            <span className="font-mono">{money(variant.price)}</span>
-          </label>
-        ))}
-      </fieldset>
-      {addons.length > 0 && (
-        <fieldset className="mt-2 grid gap-1 border-t border-line pt-2 text-sm">
-          <legend className="sr-only">Add-ons</legend>
-          {addons.map((addon) => (
-            <label key={addon.id} className="flex min-h-10 items-center justify-between gap-2">
-              <span>
-                <input
-                  type="checkbox"
-                  checked={chosen.includes(addon.id)}
-                  onChange={(event) => setChosen(event.target.checked ? [...chosen, addon.id] : chosen.filter((id) => id !== addon.id))}
-                /> {addon.name}
-              </span>
-              <span className="font-mono">+{money(addon.price)}</span>
-            </label>
-          ))}
-        </fieldset>
+          {list.hasNextPage && (
+            <button className="btn btn-secondary mt-3 w-full" disabled={list.isFetchingNextPage} onClick={() => list.fetchNextPage()}>
+              {list.isFetchingNextPage ? 'Loading…' : 'Show more'}
+            </button>
+          )}
+        </>
       )}
-      <div className="mt-2 flex gap-2">
-        <button className="btn btn-primary flex-1" onClick={() => onAdd(variants.find((v: any) => v.id === variantId), chosen)}>Add</button>
-        <button className="btn btn-secondary" onClick={onClose}>Close</button>
-      </div>
-    </div>
+
+      {openId && <OrderDrawer id={openId} me={me} onClose={() => change({ open: null })} onOpenInPos={() => navigate(`/pos?order=${openId}`)} />}
+    </>
   )
 }

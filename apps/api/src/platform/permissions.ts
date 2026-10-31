@@ -2,7 +2,7 @@ export type Role = 'owner' | 'manager' | 'cashier' | 'waiter' | 'kitchen' | 'acc
 
 const MANAGER = [
   'business.read', 'branches.read', 'staff.read', 'staff.write', 'devices.manage', 'menu.read', 'menu.write',
-  'orders.read', 'orders.write', 'orders.discount', 'orders.cancel',
+  'orders.read', 'orders.write', 'orders.discount', 'orders.discount_limited', 'orders.cancel',
   'billing.read', 'billing.write', 'billing.correct',
   'payments.read', 'payments.record', 'payments.verify', 'payments.refund',
   'cash.use', 'cash.move', 'cash.review', 'customers.read', 'customers.write', 'reports.read',
@@ -17,7 +17,7 @@ const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: OWNER,
   manager: MANAGER,
   accountant: ['business.read', 'branches.read', 'menu.read', 'orders.read', 'billing.read', 'payments.read', 'payments.verify', 'cash.review', 'customers.read', 'reports.read'],
-  cashier: [...FRONTLINE, 'billing.read', 'billing.write', 'payments.read', 'payments.record', 'cash.use', 'customers.read', 'customers.write'],
+  cashier: [...FRONTLINE, 'orders.discount_limited', 'billing.read', 'billing.write', 'payments.read', 'payments.record', 'cash.use', 'customers.read', 'customers.write'],
   waiter: FRONTLINE,
   kitchen: ['branches.read', 'menu.read', 'orders.read'],
 }

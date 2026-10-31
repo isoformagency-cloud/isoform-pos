@@ -6,6 +6,7 @@ import { Shell } from './components/Shell'
 import { api, supabase } from './lib/api'
 import { Branches } from './pages/Branches'
 import { Cash } from './pages/Cash'
+import { Checkout } from './pages/Checkout'
 import { Devices } from './pages/Devices'
 import { Home } from './pages/Home'
 import { InvoiceDetail, Invoices } from './pages/Invoices'
@@ -14,6 +15,7 @@ import { Menu } from './pages/Menu'
 import { Orders } from './pages/Orders'
 import { Payments } from './pages/Payments'
 import { PinLogin } from './pages/PinLogin'
+import { Pos } from './pages/Pos'
 import { Reports } from './pages/Reports'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
@@ -72,7 +74,9 @@ export function App() {
     <Routes>
       <Route element={<Shell me={me.data} />}>
         <Route index element={<Home me={me.data} />} />
+        <Route path="pos" element={<Pos me={me.data} />} />
         <Route path="orders" element={<Orders me={me.data} />} />
+        <Route path="checkout/:id" element={<Checkout me={me.data} />} />
         <Route path="invoices" element={<Invoices />} />
         <Route path="invoices/:id" element={<InvoiceDetail me={me.data} />} />
         <Route path="payments" element={<Payments me={me.data} />} />

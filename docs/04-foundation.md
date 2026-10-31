@@ -113,3 +113,15 @@ Transaction references are also optional by default after first live use. The pa
 
 Order confirmation added after first live use: Confirm order locks items, add-ons and service charge in the database, and only discounts can change the bill afterwards. Empty orders delete in one tap with no reason. Payment methods list cash, UPI, card, then bank. Order types have their own colour and symbol. API tests: 171 passed in the full run, and the orders file then passed 31 of 31 after its cleanup was fixed.
 
+## POS rebuild, stages 1 to 3 (31 October 2026)
+
+Rebuilt from the feature list in docs/06-feature-list.md. Built: a new look across every page, grouped sidebar, top bar, phone navigation, search, a split POS screen, hold and resume, guests, delivery address, order and item notes, a full Orders page with search, filters, timeline and CSV export, a checkout screen with cash change, UPI QR and split payments, PDF bills, A4 bills, and bill settings with a live preview.
+
+The first tap on an item now creates the order, so staff no longer choose a type first. The Orders page moved to the new POS screen at /pos, and /orders is now the list.
+
+Decisions made while building: cashiers can discount up to an owner-set limit, 20% by default, and billing checks it again in case items were removed afterwards. The discount reason is now optional. Exports need report access, because they include customer phone numbers. Bill footer and FSSAI number are copied onto each bill, so later changes leave issued bills alone. UPI QR codes pay the café directly, so nothing passes through ISOFORM.
+
+Known limits: UPI QR codes have not been scanned with a real UPI app. Cash received and change are shown but not stored. A4 and 80mm printing have not been tested on real printers. Requests were slow during the on-screen check because tests were running against the same database from this PC, so speed needs checking on the live site.
+
+Tests: 192 API tests passed, 94 of 94 database rules. The full run took 41 minutes. The report tests' setup hit its 2 minute limit there and on one solo rerun, so 18 were skipped, then passed 18 of 18 alone with a longer limit. The setup makes over 50 calls to Mumbai at about 100 to 140 ms for each database trip, so the limit is now 5 minutes. The last two POS fixes came after these runs and only passed the build.
+

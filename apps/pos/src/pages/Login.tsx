@@ -1,13 +1,16 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { Notice } from '../components/ui'
+import { Mark, Notice } from '../components/ui'
 import { deviceCredential, supabase } from '../lib/api'
 
 function Frame({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="grid min-h-svh place-items-center bg-paper-soft p-5">
       <div className="card w-full max-w-sm p-6">
-        <p className="font-display font-semibold tracking-tight">ISOFORM POS</p>
+        <div className="flex items-center gap-2.5">
+          <Mark size={32} />
+          <p className="font-display font-semibold tracking-tight">ISOFORM POS</p>
+        </div>
         <h1 className="mt-4 text-2xl">{title}</h1>
         <div className="mt-5 grid gap-4">{children}</div>
       </div>

@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     env: loadEnv('', fileURLToPath(new URL('../..', import.meta.url)), ''),
     testTimeout: 180000,
-    hookTimeout: 120000,
+    hookTimeout: 300000,
     // Every file creates businesses on the one shared Supabase project.
     fileParallelism: false,
   },

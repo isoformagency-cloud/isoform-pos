@@ -12,6 +12,12 @@ const settings = z.strictObject({
   roundingRule: z.enum(['none', 'nearest_rupee']).optional(),
   pricesIncludeTax: z.boolean().optional(),
   allowSelfVerification: z.boolean().optional(),
+  upiId: z.string().trim().regex(/^([A-Za-z0-9._-]{2,64}@[A-Za-z0-9.-]{2,64})?$/, 'Enter a UPI ID like yourcafe@okbank.').optional(),
+  fssaiNumber: z.string().trim().regex(/^(\d{14})?$/, 'An FSSAI licence number has 14 digits.').optional(),
+  billFooter: z.string().trim().max(200).optional(),
+  billFormat: z.enum(['thermal', 'a4']).optional(),
+  discountPresets: z.array(z.number().int().min(1).max(100)).max(6).optional(),
+  cashierDiscountLimit: z.number().min(0).max(100).optional(),
 })
 
 const newBranch = z.strictObject({
@@ -34,7 +40,8 @@ tenancy.get('/business', requires('business.read'), async (c) => {
   const actor = c.get('actor')
   const business = await tx(dbContext(actor), async (db) => {
     const { rows } = await db.query(
-      `select id, display_name, logo_path, currency, rounding_rule, prices_include_tax, allow_self_verification
+      `select id, display_name, logo_path, currency, rounding_rule, prices_include_tax, allow_self_verification,
+              upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text
          from app.tenants where id = $1`,
       [actor.tenantId],
     )
@@ -51,9 +58,17 @@ tenancy.patch('/business', requires('business.write'), async (c) => {
          display_name = coalesce($2, display_name),
          rounding_rule = coalesce($3, rounding_rule),
          prices_include_tax = coalesce($4, prices_include_tax),
-         allow_self_verification = coalesce($5, allow_self_verification)
-       where id = $1 returning id, display_name, rounding_rule, prices_include_tax, allow_self_verification`,
-      [actor.tenantId, input.displayName, input.roundingRule, input.pricesIncludeTax, input.allowSelfVerification],
+         allow_self_verification = coalesce($5, allow_self_verification),
+         upi_id = case when $6::text is null then upi_id else nullif($6, '') end,
+         fssai_number = case when $7::text is null then fssai_number else nullif($7, '') end,
+         bill_footer = case when $8::text is null then bill_footer else nullif($8, '') end,
+         bill_format = coalesce($9, bill_format),
+         discount_presets = coalesce($10, discount_presets),
+         cashier_discount_limit = coalesce($11, cashier_discount_limit)
+       where id = $1 returning id, display_name, rounding_rule, prices_include_tax, allow_self_verification,
+         upi_id, fssai_number, bill_footer, bill_format, discount_presets, cashier_discount_limit::text`,
+      [actor.tenantId, input.displayName, input.roundingRule, input.pricesIncludeTax, input.allowSelfVerification,
+        input.upiId, input.fssaiNumber, input.billFooter, input.billFormat, input.discountPresets, input.cashierDiscountLimit],
     )
     await audit(db, actor, 'business.updated', 'tenant', actor.tenantId, input)
     return rows[0]

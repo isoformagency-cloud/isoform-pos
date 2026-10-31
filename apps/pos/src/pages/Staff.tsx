@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
-import { Loading, Notice, PageHeader } from '../components/ui'
+import { Avatar, Badge, Loading, Notice, PageHeader } from '../components/ui'
 import { api } from '../lib/api'
 
 const PIN_ROLES = ['cashier', 'waiter', 'kitchen']
@@ -85,12 +85,18 @@ export function Staff({ me }: { me: Me }) {
       )}
       {remove.error && <div className="mb-3"><Notice>{remove.error.message}</Notice></div>}
       <Loading ready={!staff.isPending} error={staff.error}>
-        <ul className="card divide-y divide-line">
+        <ul className="card divide-y divide-line-soft overflow-hidden">
           {staff.data?.items.map((member: any) => (
             <li key={member.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-              <div>
-                <p className="font-medium">{member.display_name}</p>
-                <p className="text-sm capitalize text-ink-soft">{member.role} · {member.status}</p>
+              <div className="flex items-center gap-3">
+                <Avatar name={member.display_name} />
+                <div>
+                  <p className="font-medium">{member.display_name}</p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-sm capitalize text-ink-soft">
+                    {member.role}
+                    {member.status !== 'active' && <Badge tone="wait">{member.status}</Badge>}
+                  </p>
+                </div>
               </div>
               {member.id !== me.membershipId && (
                 <div className="flex gap-2">

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { audit, command, dbContext, readBody, requires, session, type Actor, type Env } from '../../platform/context.js'
 import { tx, type Db } from '../../platform/db.js'
 import { AppError, notFound } from '../../platform/errors.js'
+import { assertDiscountLimit } from '../orders/discount-limit.js'
 import { calculateBills, divide, financialYear, fromMilli, milli, paise, rupees, type Bill, type BillPiece, type Discount } from './calculate.js'
 
 export const billing = new Hono<Env>()
@@ -49,7 +50,7 @@ async function loadBillingData(db: Db, orderId: string): Promise<BillingData> {
        from app.branches where id = $1`,
     [order.branch_id],
   )
-  const { rows: [tenant] } = await db.query(`select rounding_rule, prices_include_tax from app.tenants where id = $1`, [order.tenant_id])
+  const { rows: [tenant] } = await db.query(`select display_name, rounding_rule, prices_include_tax, fssai_number, bill_footer from app.tenants where id = $1`, [order.tenant_id])
   const { rows: [registration] } = await db.query(
     `select id, legal_name, trade_name, gstin, state_code, scheme, address from app.tax_registrations where id = $1`,
     [branch.tax_registration_id],
@@ -136,11 +137,13 @@ async function seriesFor(db: Db, actor: Actor, registrationId: string, branch: a
 }
 
 async function saveInvoice(db: Db, actor: Actor, data: BillingData, id: string, bill: Bill, seriesId: string, documentType: string) {
-  const { registration, branch } = data
+  const { registration, branch, tenant } = data
+  // Copied onto the bill, so changing the settings later never alters an issued bill.
   const seller = {
     legalName: registration.legal_name, tradeName: registration.trade_name, gstin: registration.gstin,
     stateCode: registration.state_code, address: registration.address, scheme: registration.scheme,
     branchName: branch.name, branchAddress: branch.address, branchPhone: branch.phone,
+    fssai: tenant.fssai_number, footer: tenant.bill_footer,
   }
   // The database assigns the number. Nothing here can choose it.
   const { rows: [invoice] } = await db.query(
@@ -171,8 +174,12 @@ async function loadInvoice(db: Db, id: string) {
     `select i.id, i.number, i.document_type, i.order_id, i.branch_id, i.invoice_date::text, i.business_date::text,
             i.seller_snapshot, i.buyer_snapshot, i.taxable_total::text, i.cgst_total::text, i.sgst_total::text,
             i.igst_total::text, i.cess_total::text, i.round_off::text, i.grand_total::text, i.issued_at,
-            b.credited::text, b.allocated::text, b.refunded::text, b.outstanding::text
-       from app.invoices i join app.invoice_balances b on b.invoice_id = i.id
+            b.credited::text, b.allocated::text, b.refunded::text, b.outstanding::text,
+            c.name as customer_name, c.phone as customer_phone, o.display_number, o.delivery_address
+       from app.invoices i
+       join app.invoice_balances b on b.invoice_id = i.id
+       join app.orders o on o.id = i.order_id
+       left join app.customers c on c.id = i.customer_id
       where i.id = $1`,
     [id],
   )
@@ -219,6 +226,7 @@ billing.post('/orders/:id/finalize', requires('billing.write'), async (c) => {
 
     const data = await loadBillingData(db, orderId)
     if (data.items.length === 0) throw new AppError(409, 'empty_order', 'Add at least one item before billing.')
+    await assertDiscountLimit(db, actor.tenantId, orderId)
 
     const pieces: BillPiece[] = []
     const billed = new Map<string, bigint>()

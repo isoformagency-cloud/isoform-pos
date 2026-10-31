@@ -15,7 +15,7 @@ function Figure({ label, value, note }: { label: string; value: string; note: st
   return (
     <div className="card p-4">
       <p className="text-sm text-ink-soft">{label}</p>
-      <p className="mt-1 font-mono text-xl">{value}</p>
+      <p className="tnum mt-1 font-display text-2xl font-semibold tracking-tight">{value}</p>
       <p className="mt-1 text-xs text-ink-soft">{note}</p>
     </div>
   )
@@ -47,7 +47,7 @@ export function Reports({ me }: { me: Me }) {
               <Figure label="Net sales" value={money(data.sales.net_sales)} note={`${count(data.sales.bills, 'bill')}, before tax, after credit notes`} />
               <Figure label="Tax" value={money(String(Number(data.sales.cgst) + Number(data.sales.sgst) + Number(data.sales.igst) + Number(data.sales.cess)))} note={`CGST ${data.sales.cgst} · SGST ${data.sales.sgst}`} />
               <Figure label="Payments recorded" value={money(data.paymentTotals.recorded)} note="Entered by staff, not proof of receipt" />
-              <Figure label="Payments confirmed" value={money(data.paymentTotals.confirmed)} note="Checked by a second person" />
+              <Figure label="Payments confirmed" value={money(data.paymentTotals.confirmed)} note="Checked and confirmed" />
               <Figure label="Waiting to be checked" value={money(data.paymentTotals.awaiting_check)} note={count(data.paymentTotals.awaiting_count, 'payment')} />
               <Figure label="Still owed" value={money(data.outstanding.total)} note={`${count(data.outstanding.bills, 'bill')} from these days`} />
               <Figure label="Refunds" value={money(data.refunds.total)} note={`${data.refunds.count} recorded`} />
@@ -62,7 +62,7 @@ export function Reports({ me }: { me: Me }) {
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <section>
                 <h2 className="mb-2 text-xl">Payments by method</h2>
-                <table className="card w-full border-separate border-spacing-0 text-sm">
+                <table className="card tnum w-full border-separate border-spacing-0 overflow-hidden text-sm">
                   <thead>
                     <tr className="text-left text-ink-soft">
                       <th className="p-3 font-medium">Method</th>
@@ -70,11 +70,11 @@ export function Reports({ me }: { me: Me }) {
                       <th className="p-3 text-right font-medium">Confirmed</th>
                     </tr>
                   </thead>
-                  <tbody className="font-mono">
-                    {data.payments.length === 0 && <tr><td colSpan={3} className="p-3 font-sans text-ink-soft">No payments in this period.</td></tr>}
+                  <tbody>
+                    {data.payments.length === 0 && <tr><td colSpan={3} className="p-3  text-ink-soft">No payments in this period.</td></tr>}
                     {data.payments.map((row: any) => (
                       <tr key={row.method}>
-                        <td className="border-t border-line p-3 font-sans">{row.method}</td>
+                        <td className="border-t border-line p-3 ">{row.method}</td>
                         <td className="border-t border-line p-3 text-right">{money(row.recorded)}</td>
                         <td className="border-t border-line p-3 text-right">{money(row.confirmed)}</td>
                       </tr>
@@ -85,7 +85,7 @@ export function Reports({ me }: { me: Me }) {
 
               <section>
                 <h2 className="mb-2 text-xl">Top items</h2>
-                <table className="card w-full border-separate border-spacing-0 text-sm">
+                <table className="card tnum w-full border-separate border-spacing-0 overflow-hidden text-sm">
                   <thead>
                     <tr className="text-left text-ink-soft">
                       <th className="p-3 font-medium">Item</th>
@@ -93,11 +93,11 @@ export function Reports({ me }: { me: Me }) {
                       <th className="p-3 text-right font-medium">Sales</th>
                     </tr>
                   </thead>
-                  <tbody className="font-mono">
-                    {data.items.length === 0 && <tr><td colSpan={3} className="p-3 font-sans text-ink-soft">No sales in this period.</td></tr>}
+                  <tbody>
+                    {data.items.length === 0 && <tr><td colSpan={3} className="p-3  text-ink-soft">No sales in this period.</td></tr>}
                     {data.items.map((row: any) => (
                       <tr key={row.description}>
-                        <td className="border-t border-line p-3 font-sans">{row.description}</td>
+                        <td className="border-t border-line p-3 ">{row.description}</td>
                         <td className="border-t border-line p-3 text-right">{Number(row.quantity)}</td>
                         <td className="border-t border-line p-3 text-right">{money(row.sales)}</td>
                       </tr>
@@ -109,7 +109,7 @@ export function Reports({ me }: { me: Me }) {
 
               <section>
                 <h2 className="mb-2 text-xl">Tax by rate</h2>
-                <table className="card w-full border-separate border-spacing-0 text-sm">
+                <table className="card tnum w-full border-separate border-spacing-0 overflow-hidden text-sm">
                   <thead>
                     <tr className="text-left text-ink-soft">
                       <th className="p-3 font-medium">Rate</th>
@@ -117,8 +117,8 @@ export function Reports({ me }: { me: Me }) {
                       <th className="p-3 text-right font-medium">Tax</th>
                     </tr>
                   </thead>
-                  <tbody className="font-mono">
-                    {data.taxRates.length === 0 && <tr><td colSpan={3} className="p-3 font-sans text-ink-soft">No bills in this period.</td></tr>}
+                  <tbody>
+                    {data.taxRates.length === 0 && <tr><td colSpan={3} className="p-3  text-ink-soft">No bills in this period.</td></tr>}
                     {data.taxRates.map((row: any) => (
                       <tr key={row.rate}>
                         <td className="border-t border-line p-3">{Number(row.rate)}%</td>
@@ -133,13 +133,13 @@ export function Reports({ me }: { me: Me }) {
 
               <section>
                 <h2 className="mb-2 text-xl">Cash sessions</h2>
-                <ul className="card divide-y divide-line text-sm">
+                <ul className="card divide-y divide-line-soft overflow-hidden text-sm">
                   {data.cash.length === 0 && <li className="p-3 text-ink-soft">No sessions in this period.</li>}
                   {data.cash.map((row: any) => (
                     <li key={row.id} className="flex flex-wrap justify-between gap-2 p-3">
                       <span>{row.business_date} · {row.branch} · {row.register} · <span className="capitalize">{row.status}</span></span>
                       {row.variance && (
-                        <span className={`font-mono ${Number(row.variance) === 0 ? 'text-ok' : 'text-wait'}`}>
+                        <span className={`tnum ${Number(row.variance) === 0 ? 'text-ok' : 'text-wait'}`}>
                           {Number(row.variance) === 0 ? 'Matched' : `${Number(row.variance) < 0 ? 'Short' : 'Over'} ${money(row.variance.replace('-', ''))}`}
                         </span>
                       )}
@@ -151,11 +151,11 @@ export function Reports({ me }: { me: Me }) {
               {me.branchIds.length > 1 && !branch && (
                 <section>
                   <h2 className="mb-2 text-xl">By branch</h2>
-                  <ul className="card divide-y divide-line text-sm">
+                  <ul className="card divide-y divide-line-soft overflow-hidden text-sm">
                     {data.byBranch.map((row: any) => (
                       <li key={row.id} className="flex justify-between gap-3 p-3">
                         <span>{row.name}</span>
-                        <span className="font-mono">{money(String(Number(row.billed_sales) - Number(row.credited_sales)))}</span>
+                        <span className="tnum">{money(String(Number(row.billed_sales) - Number(row.credited_sales)))}</span>
                       </li>
                     ))}
                   </ul>
