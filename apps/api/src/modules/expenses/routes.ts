@@ -52,7 +52,7 @@ async function openDrawer(db: Db, branchId: string) {
 /** Cash taken from the drawer must leave the session too, or the day's count comes up short. */
 export async function recordExpense(db: Db, actor: Actor, branchId: string, input: z.infer<typeof expenseFields>) {
   if (input.fromDrawer && input.method !== 'cash') throw new AppError(422, 'not_cash', 'Only cash can come from the drawer.')
-  if (input.fromDrawer && !can(actor.role, 'cash.move')) throw new AppError(403, 'forbidden', 'You do not have permission to do this.')
+  if (input.fromDrawer && !can(actor, 'cash.move')) throw new AppError(403, 'forbidden', 'You do not have permission to do this.')
   let movementId: string | null = null
   if (input.fromDrawer) {
     const sessionId = await openDrawer(db, branchId)

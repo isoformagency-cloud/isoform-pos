@@ -1,6 +1,6 @@
 # ISOFORM POS: Feature list from the old app
 
-Stages 1 to 8 are approved and built, with the differences listed below. Stages 9 to 11 are not built.
+Stages 1 to 11 are approved. Features 1 to 86 are built, with the differences listed below. Features 87 to 91 are held for the owner's decisions D and E.
 
 Source: https://isoform-cafe.netlify.app/app, reviewed on 31 October 2026. Main screens were opened in the demo café. Sign-up, onboarding, checkout and pop-ups were read from the site's public code and not clicked through.
 
@@ -42,6 +42,21 @@ To approve, reply with the stages you want and the numbers to skip, for example 
 - **54, recipes:** a recipe belongs to the menu item, not its size, so Regular and Large take off the same amount.
 - **54, sales and stock:** stock comes off when the bill is issued. A sale is never blocked by low stock, so a level can go below zero until it is corrected. A credit note doesn't return stock, because the food has usually been made.
 - **Access:** cashiers can't see inventory or expenses. Accountants can view both, kitchen staff can view stock, and changes need an owner or manager.
+
+## What changed from this list in stages 9 to 11
+
+- **57 to 60, dashboard:** appears for anyone with Reports access. Other staff keep the simple home screen.
+- **58, this week:** starts on Monday. Week and month compare with the same number of days straight before them.
+- **65, profit:** shows sales less expenses, labelled as an estimate. Stock counts in full when bought, so it isn't accounting profit.
+- **68, item photos:** kept in public storage, because a menu isn't private and every till loads them. File names can't be guessed.
+- **74, Admin:** everything an owner can do except permissions, backups and changing owners or other admins.
+- **75, permissions grid:** covers ten sections. Manage never adds refunds, credit notes, cancellations or full discounts to a role that doesn't start with them. Staff, devices, branches and settings aren't in the grid, so a PIN can't reach them. Everyone keeps at least View on the menu, since orders need prices. Changes reach people already signed in the next time they open the app.
+- **76, switch user:** appears only on a registered device and goes straight to the PIN screen.
+- **79, notifications:** worked out live from what's happening now, so they clear themselves once a problem is fixed. There's no saved history.
+- **80, choosing notifications:** set by the owner for the whole team, not per person.
+- **83, backup:** one file, owner only. It holds customer details. It leaves out PINs, device secrets and login details, and each download goes in the activity log. It can't be restored from inside the app.
+- **85 and 86, sample data:** a menu and tables only. Sample bills would use real numbers from a GST series, so bills are never sampled. Clear hides the samples. It can only be added to an empty menu.
+- **87 to 91, not built:** public demo, public sign-up with a trial, plans, subscriptions and delete account. See decisions D and E. Delete account also needs a legal answer first, because tax bills must be kept for years.
 
 ## Stage 1: Look and layout
 

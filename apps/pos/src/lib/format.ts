@@ -2,7 +2,7 @@
 export const money = (value: string | number) => {
   const amount = Number(value)
   const whole = Number.isInteger(amount)
-  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 })}`
+  return `${amount < 0 ? '−' : ''}₹${Math.abs(amount).toLocaleString('en-IN', { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: 2 })}`
 }
 
 export const time = (value: string) => new Date(value).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })

@@ -9,25 +9,12 @@ import { useAsk } from '../components/Ask'
 import { ChooseBranch, useWorkingBranch } from '../components/BranchPicker'
 import { CustomerPicker } from '../components/CustomerPicker'
 import { DiscountDialog } from '../components/DiscountDialog'
-import { ORDER_TYPES, TYPE_LOOK, typeName } from '../components/order-look'
-import { Badge, Modal, Notice } from '../components/ui'
-import { api, ApiError } from '../lib/api'
+import { CATEGORY_ICONS, ORDER_TYPES, TYPE_LOOK, typeName } from '../components/order-look'
+import { Badge, FoodMark, Modal, Notice } from '../components/ui'
+import { ApiError, api, menuPhoto } from '../lib/api'
 import { isOlderDay, money, shortDate } from '../lib/format'
 
 type Change = { path: string; method?: string; body?: object }
-
-const FOOD_COLOUR: Record<string, string> = { veg: 'border-ok text-ok', non_veg: 'border-bad text-bad', egg: 'border-wait text-wait' }
-const FOOD_NAME: Record<string, string> = { veg: 'Vegetarian', non_veg: 'Non-vegetarian', egg: 'Contains egg' }
-
-function FoodMark({ type }: { type: string }) {
-  if (!FOOD_COLOUR[type]) return null
-  return (
-    <span title={FOOD_NAME[type]} className={`grid size-3.5 shrink-0 place-items-center rounded-[3px] border ${FOOD_COLOUR[type]}`}>
-      <span className="size-1.5 rounded-full bg-current" />
-      <span className="sr-only">{FOOD_NAME[type]}</span>
-    </span>
-  )
-}
 
 export function Pos({ me }: { me: Me }) {
   const queryClient = useQueryClient()
@@ -95,6 +82,15 @@ export function Pos({ me }: { me: Me }) {
   const settings = useQuery({ queryKey: ['pos-settings'], queryFn: () => api('/pos-settings') })
   const floor = useQuery({ queryKey: ['floor', branch], queryFn: () => api('/floor', { branch: true }), enabled: Boolean(branch) && me.permissions.includes('tables.read') })
   const usesKitchen = settings.data?.uses_kitchen !== false
+  const orderTypes = ORDER_TYPES.filter(([value]) => !settings.data || settings.data.order_types.includes(value))
+  const showPhotos = settings.data?.show_item_photos !== false
+  const showMarks = settings.data?.show_food_marks !== false
+
+  // A new order must start on a type the café still offers.
+  const firstType = orderTypes[0]?.[0]
+  useEffect(() => {
+    if (firstType && !orderTypes.some(([value]) => value === draftType)) setDraftType(firstType)
+  }, [firstType, draftType, orderTypes])
   // Applied once, so choosing a different table afterwards isn't undone by a refresh.
   const appliedTable = useRef<string | null>(null)
   useEffect(() => {
@@ -344,6 +340,10 @@ export function Pos({ me }: { me: Me }) {
               className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-[0.625rem] border px-3 text-sm font-medium transition-colors ${category === item.id ? 'border-ink bg-ink text-white' : 'border-line bg-white text-ink-mid hover:border-line-strong'}`}
               onClick={() => setCategory(item.id)}
             >
+              {(() => {
+                const Icon = CATEGORY_ICONS[item.icon]
+                return Icon ? <Icon size={15} strokeWidth={1.75} aria-hidden="true" /> : null
+              })()}
               {item.name}
               <span className={`tnum text-xs ${category === item.id ? 'text-white/70' : 'text-ink-faint'}`}>{item.count}</span>
             </button>
@@ -371,12 +371,16 @@ export function Pos({ me }: { me: Me }) {
                 <li key={product.id}>
                   <button
                     disabled={available.length === 0 || !canEdit}
-                    className="card flex min-h-[5.25rem] w-full flex-col justify-between gap-2 p-3 text-left transition-[border-color,transform] hover:border-brand-300 active:scale-[0.98] disabled:opacity-55"
+                    className="card flex min-h-[5.25rem] w-full flex-col justify-between gap-2 overflow-hidden p-3 text-left transition-[border-color,transform] hover:border-brand-300 active:scale-[0.98] disabled:opacity-55"
                     onClick={() => tapProduct(product)}
                   >
+                    {showPhotos && product.image_path && <img src={menuPhoto(product.image_path)} alt="" decoding="async" className="-mx-3 -mt-3 mb-0.5 aspect-[16/10] w-[calc(100%+1.5rem)] max-w-none object-cover" />}
                     <span className="flex items-start gap-1.5">
-                      <span className="mt-0.5"><FoodMark type={product.food_type} /></span>
-                      <span className="text-sm leading-snug font-medium">{product.name}</span>
+                      {showMarks && <span className="mt-0.5"><FoodMark type={product.food_type} /></span>}
+                      <span className="min-w-0">
+                        <span className="block text-sm leading-snug font-medium">{product.name}</span>
+                        {product.description && <span className="mt-0.5 line-clamp-2 block text-xs text-ink-soft">{product.description}</span>}
+                      </span>
                     </span>
                     <span className="flex items-center justify-between gap-2">
                       <span className="tnum text-sm text-ink-mid">{available.length ? money(available[0].price) : 'Sold out'}</span>
@@ -409,8 +413,8 @@ export function Pos({ me }: { me: Me }) {
             {current && <button className="btn btn-secondary btn-sm" onClick={() => select(null)}><Plus size={15} aria-hidden="true" /> New</button>}
           </div>
 
-          <div role="group" aria-label="Order type" className="mt-2.5 grid grid-cols-4 gap-1 rounded-xl bg-mist p-1">
-            {ORDER_TYPES.map(([value, label]) => {
+          <div role="group" aria-label="Order type" className="mt-2.5 grid gap-1 rounded-xl bg-mist p-1" style={{ gridTemplateColumns: `repeat(${orderTypes.length}, minmax(0, 1fr))` }}>
+            {orderTypes.map(([value, label]) => {
               const Icon = TYPE_LOOK[value].icon
               const active = type === value
               return (

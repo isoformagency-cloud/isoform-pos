@@ -4,6 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { Navigate, Route, Routes } from 'react-router'
 import { Shell } from './components/Shell'
 import { api, supabase } from './lib/api'
+import { Activity } from './pages/Activity'
 import { Branches } from './pages/Branches'
 import { Cash } from './pages/Cash'
 import { Checkout } from './pages/Checkout'
@@ -18,6 +19,7 @@ import { Login, SetPassword } from './pages/Login'
 import { Menu } from './pages/Menu'
 import { Orders } from './pages/Orders'
 import { Payments } from './pages/Payments'
+import { Permissions } from './pages/Permissions'
 import { PinLogin } from './pages/PinLogin'
 import { Pos } from './pages/Pos'
 import { Reports } from './pages/Reports'
@@ -95,6 +97,8 @@ export function App() {
         <Route path="menu" element={<Menu me={me.data} />} />
         <Route path="branches" element={<Branches me={me.data} />} />
         <Route path="staff" element={<Staff me={me.data} />} />
+        <Route path="permissions" element={<Permissions />} />
+        <Route path="activity" element={<Activity />} />
         <Route path="devices" element={<Devices />} />
         <Route path="settings" element={<Settings />} />
       </Route>

@@ -45,7 +45,7 @@ async function loadSession(db: Db, actor: Actor, id: string) {
   )
   if (!row) throw notFound('Cash session')
   const { running, ...session } = row
-  const reviewer = can(actor.role, 'cash.review')
+  const reviewer = can(actor, 'cash.review')
   if (!reviewer) return { ...session, expected_amount: null, variance: null, movements: [] }
   const { rows: movements } = await db.query(
     `select m.id, m.movement_type, m.direction, m.amount::text, m.reason, m.created_at, b.display_name as recorded_by_name
@@ -74,7 +74,7 @@ cash.get('/registers', requires('cash.use'), async (c) => {
 cash.get('/cash-sessions', requiresAny('cash.use', 'cash.review'), async (c) => {
   const actor = c.get('actor')
   const status = z.enum(['open', 'closed', 'reviewed']).optional().parse(c.req.query('status'))
-  const reviewer = can(actor.role, 'cash.review')
+  const reviewer = can(actor, 'cash.review')
   const items = await tx(dbContext(actor), async (db) => {
     const { rows } = await db.query(
       `select s.id, r.name as register_name, s.status, s.business_date::text, s.opened_at, s.closed_at,

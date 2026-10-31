@@ -17,6 +17,7 @@ import { menu } from './modules/menu/routes.js'
 import { orders } from './modules/orders/routes.js'
 import { payments } from './modules/payments/routes.js'
 import { reports } from './modules/reports/routes.js'
+import { setup } from './modules/setup/routes.js'
 import { tables } from './modules/tables/routes.js'
 import { tenancy } from './modules/tenancy/routes.js'
 import { workspace } from './modules/workspace/routes.js'
@@ -54,6 +55,7 @@ app.route('/', kitchen)
 app.route('/', customers)
 app.route('/', expenses)
 app.route('/', inventory)
+app.route('/', setup)
 app.route('/', workspace)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))

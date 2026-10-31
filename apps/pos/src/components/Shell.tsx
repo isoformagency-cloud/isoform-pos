@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  AlertTriangle, Armchair, Bell, Building2, ChartColumn, ChefHat, CircleDot, CreditCard, FileText, LayoutDashboard, LogOut, Menu as MenuIcon, MonitorSmartphone,
-  MoreHorizontal, Package, PauseCircle, Plus, Receipt, ReceiptIndianRupee, Search, Settings, ShoppingCart, UserRound, Users, UtensilsCrossed, Wallet, X,
+  AlertTriangle, Armchair, Bell, Building2, ChartColumn, ChefHat, CircleDot, CreditCard, FileText, History, LayoutDashboard, LogOut, Menu as MenuIcon, MonitorSmartphone,
+  MoreHorizontal, Package, PauseCircle, Plus, Receipt, ReceiptIndianRupee, Search, Settings, ShieldCheck, ShoppingCart, UserRound, Users, UsersRound, UtensilsCrossed, Wallet, X,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import type { Me } from '../App'
-import { api, saveActiveBranch, supabase, useActiveBranch } from '../lib/api'
+import { api, deviceCredential, saveActiveBranch, supabase, useActiveBranch } from '../lib/api'
 import { useLiveUpdates } from '../lib/live'
 import { useChooseBranch } from './BranchPicker'
 import { CommandSearch } from './CommandSearch'
@@ -43,20 +43,24 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
       { to: '/customers', label: 'Customers', icon: UserRound, needs: 'customers.read' },
       { to: '/expenses', label: 'Expenses', icon: ReceiptIndianRupee, needs: 'expenses.read' },
       { to: '/staff', label: 'Staff', icon: Users, needs: 'staff.read' },
+      { to: '/permissions', label: 'Permissions', icon: ShieldCheck, needs: 'permissions.manage' },
       { to: '/devices', label: 'Devices', icon: MonitorSmartphone, needs: 'devices.manage' },
       { to: '/branches', label: 'Branches', icon: Building2, needs: 'branches.read' },
     ],
   },
   {
     label: 'Insights',
-    items: [{ to: '/reports', label: 'Reports', icon: ChartColumn, needs: 'reports.read' }],
+    items: [
+      { to: '/reports', label: 'Reports', icon: ChartColumn, needs: 'reports.read' },
+      { to: '/activity', label: 'Activity', icon: History, needs: 'activity.read' },
+    ],
   },
 ]
 
 const SETTINGS: NavItem = { to: '/settings', label: 'Settings', icon: Settings, needs: 'business.read' }
 
 const ROLE_NAMES: Record<string, string> = {
-  owner: 'Owner', manager: 'Manager', cashier: 'Cashier', waiter: 'Waiter', kitchen: 'Kitchen staff', accountant: 'Accountant',
+  owner: 'Owner', admin: 'Admin', manager: 'Manager', cashier: 'Cashier', waiter: 'Waiter', kitchen: 'Kitchen staff', accountant: 'Accountant',
 }
 
 export interface Alerts {
@@ -68,10 +72,17 @@ export interface Alerts {
   kitchenActive: number
   kitchenDelayed: number
   lowStock: number
+  paymentIssues: number
 }
 
 const allowed = (me: Me, item: NavItem) =>
   !item.needs || me.permissions.includes(item.needs) || Boolean(item.orNeeds && me.permissions.includes(item.orNeeds))
+
+/** Hands a shared device to the next person, straight to the PIN screen. */
+async function switchUser() {
+  await supabase.auth.signOut()
+  window.location.assign('/pin')
+}
 
 function SideNav({ me, alerts, onPick }: { me: Me; alerts?: Alerts; onPick?: () => void }) {
   const active = useActiveBranch()
@@ -138,6 +149,11 @@ function SideNav({ me, alerts, onPick }: { me: Me; alerts?: Alerts; onPick?: () 
             <p className="truncate text-sm font-medium">{me.displayName}</p>
             <p className="truncate text-xs text-ink-soft">{ROLE_NAMES[me.role] ?? me.role}</p>
           </div>
+          {deviceCredential() && (
+            <button aria-label="Switch user" title="Switch user" className="btn btn-ghost btn-icon" onClick={switchUser}>
+              <UsersRound size={17} aria-hidden="true" />
+            </button>
+          )}
           <button aria-label="Sign out" title="Sign out" className="btn btn-ghost btn-icon" onClick={() => supabase.auth.signOut()}>
             <LogOut size={17} aria-hidden="true" />
           </button>
@@ -173,6 +189,8 @@ function BranchSwitcher() {
 function AlertBell({ alerts }: { alerts?: Alerts }) {
   const [open, setOpen] = useState(false)
   const holder = useRef<HTMLDivElement>(null)
+  const settings = useQuery({ queryKey: ['pos-settings'], queryFn: () => api('/pos-settings') })
+  const muted: string[] = settings.data?.muted_alerts ?? []
 
   useEffect(() => {
     if (!open) return
@@ -188,13 +206,14 @@ function AlertBell({ alerts }: { alerts?: Alerts }) {
   }, [open])
 
   const rows = [
-    { count: alerts?.kitchenDelayed, to: '/kitchen', icon: AlertTriangle, text: (n: number) => `${n} kitchen ${n === 1 ? 'ticket' : 'tickets'} delayed` },
-    { count: alerts?.lowStock, to: '/inventory', icon: Package, text: (n: number) => `${n} ${n === 1 ? 'ingredient' : 'ingredients'} low or out of stock` },
-    { count: alerts?.paymentsToVerify, to: '/payments', icon: CreditCard, text: (n: number) => `${n} ${n === 1 ? 'payment' : 'payments'} to confirm` },
-    { count: alerts?.unpaidBills, to: '/invoices', icon: FileText, text: (n: number) => `${n} unpaid ${n === 1 ? 'bill' : 'bills'}` },
-    { count: alerts?.heldOrders, to: '/orders?tab=held', icon: PauseCircle, text: (n: number) => `${n} ${n === 1 ? 'order' : 'orders'} on hold` },
-    { count: alerts?.leftoverOrders, to: '/orders', icon: CircleDot, text: (n: number) => `${n} ${n === 1 ? 'order' : 'orders'} left open from an earlier day` },
-  ].filter((row) => row.count)
+    { key: 'kitchenDelayed', count: alerts?.kitchenDelayed, to: '/kitchen', icon: AlertTriangle, text: (n: number) => `${n} kitchen ${n === 1 ? 'ticket' : 'tickets'} delayed` },
+    { key: 'lowStock', count: alerts?.lowStock, to: '/inventory', icon: Package, text: (n: number) => `${n} ${n === 1 ? 'ingredient' : 'ingredients'} low or out of stock` },
+    { key: 'paymentIssues', count: alerts?.paymentIssues, to: '/payments', icon: AlertTriangle, text: (n: number) => `${n} payment ${n === 1 ? 'issue' : 'issues'}: failed payments or short cash` },
+    { key: 'paymentsToVerify', count: alerts?.paymentsToVerify, to: '/payments', icon: CreditCard, text: (n: number) => `${n} ${n === 1 ? 'payment' : 'payments'} to confirm` },
+    { key: 'unpaidBills', count: alerts?.unpaidBills, to: '/invoices', icon: FileText, text: (n: number) => `${n} unpaid ${n === 1 ? 'bill' : 'bills'}` },
+    { key: 'heldOrders', count: alerts?.heldOrders, to: '/orders?tab=held', icon: PauseCircle, text: (n: number) => `${n} ${n === 1 ? 'order' : 'orders'} on hold` },
+    { key: 'leftoverOrders', count: alerts?.leftoverOrders, to: '/orders', icon: CircleDot, text: (n: number) => `${n} ${n === 1 ? 'order' : 'orders'} left open from an earlier day` },
+  ].filter((row) => row.count && !muted.includes(row.key))
   const total = rows.reduce((sum, row) => sum + (row.count ?? 0), 0)
 
   return (

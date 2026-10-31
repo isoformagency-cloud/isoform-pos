@@ -4,8 +4,16 @@ import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
 import { Avatar, Badge, Loading, Notice, PageHeader } from '../components/ui'
 import { api } from '../lib/api'
+import { dateTime } from '../lib/format'
 
 const PIN_ROLES = ['cashier', 'waiter', 'kitchen']
+const ROLE_NAMES: Record<string, string> = {
+  owner: 'Owner', admin: 'Admin', manager: 'Manager', cashier: 'Cashier', waiter: 'Waiter', kitchen: 'Kitchen staff', accountant: 'Accountant',
+}
+const ROLES_FOR: Record<string, string[]> = {
+  owner: ['cashier', 'waiter', 'kitchen', 'manager', 'accountant', 'admin', 'owner'],
+  admin: ['cashier', 'waiter', 'kitchen', 'manager', 'accountant'],
+}
 
 export function Staff({ me }: { me: Me }) {
   const queryClient = useQueryClient()
@@ -44,7 +52,7 @@ export function Staff({ me }: { me: Me }) {
     })
   }
 
-  const roles = me.role === 'owner' ? ['cashier', 'waiter', 'kitchen', 'manager', 'accountant', 'owner'] : PIN_ROLES
+  const roles = ROLES_FOR[me.role] ?? PIN_ROLES
 
   return (
     <>
@@ -60,7 +68,7 @@ export function Staff({ me }: { me: Me }) {
           <label className="field">
             Role
             <select value={role} onChange={(event) => setRole(event.target.value)}>
-              {roles.map((item) => <option key={item} value={item}>{item}</option>)}
+              {roles.map((item) => <option key={item} value={item}>{ROLE_NAMES[item]}</option>)}
             </select>
           </label>
           {PIN_ROLES.includes(role) ? (
@@ -92,9 +100,12 @@ export function Staff({ me }: { me: Me }) {
                 <Avatar name={member.display_name} />
                 <div>
                   <p className="font-medium">{member.display_name}</p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-sm capitalize text-ink-soft">
-                    {member.role}
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-sm text-ink-soft">
+                    {ROLE_NAMES[member.role] ?? member.role}
                     {member.status !== 'active' && <Badge tone="wait">{member.status}</Badge>}
+                  </p>
+                  <p className="tnum mt-0.5 text-xs text-ink-soft">
+                    {member.orders_today} {member.orders_today === 1 ? 'order' : 'orders'} today · {member.last_active ? `Last active ${dateTime(member.last_active)}` : 'Not active yet'}
                   </p>
                 </div>
               </div>

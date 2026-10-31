@@ -1,13 +1,136 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAsk } from '../components/Ask'
+import { ORDER_TYPES } from '../components/order-look'
 import { Receipt, type BillFormat } from '../components/Receipt'
 import { Loading, Notice, PageHeader, Segmented } from '../components/ui'
 import { api } from '../lib/api'
+import { localDate } from '../lib/format'
 
 const SAMPLE_LINES = [
   { id: '1', description: 'Filter coffee', hsn_sac: '', quantity: '2', unit_price: '80.00', discount: '0.00', taxable_value: '160.00', cgst: '4.00', sgst: '4.00', cgst_rate: '2.5', sgst_rate: '2.5' },
   { id: '2', description: 'Masala dosa', hsn_sac: '', quantity: '1', unit_price: '150.00', discount: '0.00', taxable_value: '150.00', cgst: '3.75', sgst: '3.75', cgst_rate: '2.5', sgst_rate: '2.5' },
 ]
+
+const ALERTS: [string, string][] = [
+  ['lowStock', 'Low or out-of-stock ingredients'],
+  ['kitchenDelayed', 'Delayed kitchen tickets'],
+  ['paymentIssues', 'Failed payments and short cash'],
+  ['paymentsToVerify', 'Payments to confirm'],
+  ['unpaidBills', 'Unpaid bills'],
+  ['heldOrders', 'Orders on hold'],
+  ['leftoverOrders', 'Orders left open from an earlier day'],
+]
+
+function PaymentMethods({ canWrite }: { canWrite?: boolean }) {
+  const queryClient = useQueryClient()
+  const methods = useQuery({ queryKey: ['payment-methods-all'], queryFn: () => api('/payment-methods/all') })
+  const toggle = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => api(`/payment-methods/${id}`, { method: 'PATCH', body: { isActive } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payment-methods-all'] })
+      queryClient.invalidateQueries({ queryKey: ['methods'] })
+    },
+  })
+  return (
+    <section className="card grid gap-2 p-5">
+      <h2 className="text-lg">Payment methods</h2>
+      <p className="hint">Methods turned off disappear from checkout. Past payments stay as they are.</p>
+      {methods.data?.items.map((method: any) => (
+        <label key={method.id} className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={method.is_active}
+            disabled={!canWrite || toggle.isPending}
+            onChange={(event) => toggle.mutate({ id: method.id, isActive: event.target.checked })}
+          />
+          {method.name}
+        </label>
+      ))}
+      {toggle.error && <Notice>{toggle.error.message}</Notice>}
+    </section>
+  )
+}
+
+function SampleData() {
+  const queryClient = useQueryClient()
+  const { ask, node } = useAsk()
+  const status = useQuery({ queryKey: ['setup'], queryFn: () => api('/setup') })
+  const run = useMutation({
+    mutationFn: ({ path, body = {} }: { path: string; body?: object }) => api(path, { method: 'POST', body }),
+    onSuccess: () => {
+      for (const key of ['setup', 'menu', 'floor']) queryClient.invalidateQueries({ queryKey: [key] })
+    },
+  })
+  const data = status.data
+  // A running café with no samples and the guide showing has nothing to do here.
+  if (!data || (!data.sample && data.menu && !data.dismissed)) return null
+  return (
+    <section className="card grid gap-3 p-5">
+      {node}
+      <h2 className="text-lg">Setup</h2>
+      {data?.sample && (
+        <>
+          <p className="text-sm text-ink-soft">Your menu has sample items. Clearing them hides the sample menu and tables. Bills are never sampled, so your bill numbers aren’t affected.</p>
+          <button
+            className="btn btn-secondary justify-self-start"
+            disabled={run.isPending}
+            onClick={async () => (await ask('Clear the sample menu and tables?', [], 'Clear')) && run.mutate({ path: '/setup/sample/clear' })}
+          >
+            Clear sample data
+          </button>
+        </>
+      )}
+      {data && !data.sample && !data.menu && (
+        <>
+          <p className="text-sm text-ink-soft">Add a sample café menu and tables to look around. You can clear them at any time.</p>
+          <button className="btn btn-secondary justify-self-start" disabled={run.isPending} onClick={() => run.mutate({ path: '/setup/sample' })}>Add sample data</button>
+        </>
+      )}
+      {data?.dismissed && <button className="btn btn-secondary justify-self-start" disabled={run.isPending} onClick={() => run.mutate({ path: '/setup/dismiss', body: { dismissed: false } })}>Show the setup guide again</button>}
+      {run.error && <Notice>{run.error.message}</Notice>}
+    </section>
+  )
+}
+
+function Backup() {
+  const [progress, setProgress] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  async function download() {
+    setError('')
+    try {
+      const { sections } = await api('/backup')
+      const backup: Record<string, unknown[]> = {}
+      for (const [index, section] of (sections as string[]).entries()) {
+        setProgress(`Collecting ${index + 1} of ${sections.length}…`)
+        backup[section] = []
+        for (let offset: number | null = 0; offset !== null;) {
+          const page: { rows: unknown[]; nextOffset: number | null } = await api(`/backup/${section}?offset=${offset}`)
+          backup[section].push(...page.rows)
+          offset = page.nextOffset
+        }
+      }
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(new Blob([JSON.stringify({ takenAt: new Date().toISOString(), ...backup }, null, 1)], { type: 'application/json' }))
+      link.download = `isoform-backup-${localDate()}.json`
+      link.click()
+      URL.revokeObjectURL(link.href)
+    } catch (failure) {
+      setError((failure as Error).message)
+    }
+    setProgress(null)
+  }
+
+  return (
+    <section className="card grid gap-3 p-5">
+      <h2 className="text-lg">Backup</h2>
+      <p className="text-sm text-ink-soft">Download your menu, customers, orders, bills, payments, expenses and stock as one file. Keep it safe, because it holds customer details. PINs and passwords are never included.</p>
+      <button className="btn btn-secondary justify-self-start" disabled={progress !== null} onClick={download}>{progress ?? 'Download backup'}</button>
+      {error && <Notice>{error}</Notice>}
+    </section>
+  )
+}
 
 export function Settings() {
   const queryClient = useQueryClient()
@@ -15,7 +138,9 @@ export function Settings() {
   const registrations = useQuery({ queryKey: ['tax'], queryFn: () => api('/tax-registrations') })
   const me = queryClient.getQueryData<{ permissions: string[] }>(['me'])
   const canWrite = me?.permissions.includes('business.write')
+  const canBackup = me?.permissions.includes('backup.download')
   const [draft, setDraft] = useState<{ footer?: string; fssai?: string; format?: BillFormat; name?: string }>({})
+  const [noTypes, setNoTypes] = useState(false)
   const save = useMutation({
     mutationFn: (body: object) => api('/business', { method: 'PATCH', body }),
     onSuccess: () => {
@@ -32,6 +157,9 @@ export function Settings() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
+    const orderTypes = form.getAll('orderTypes')
+    setNoTypes(orderTypes.length === 0)
+    if (orderTypes.length === 0) return
     save.mutate({
       displayName: form.get('displayName'),
       roundingRule: form.get('roundingRule'),
@@ -45,6 +173,11 @@ export function Settings() {
       cashierDiscountLimit: Number(form.get('cashierDiscountLimit')),
       usesKitchen: form.get('usesKitchen') === 'on',
       kitchenDelayMinutes: Number(form.get('kitchenDelayMinutes')),
+      orderTypes,
+      defaultSeats: Number(form.get('defaultSeats')),
+      showItemPhotos: form.get('showItemPhotos') === 'on',
+      showFoodMarks: form.get('showFoodMarks') === 'on',
+      mutedAlerts: ALERTS.map(([key]) => key).filter((key) => !form.getAll('alerts').includes(key)),
     })
   }
 
@@ -155,6 +288,45 @@ export function Settings() {
               </label>
             </section>
 
+            <section className="card grid gap-2 p-5">
+              <h2 className="text-lg">Orders and POS</h2>
+              <div className="field">
+                Order types you offer
+                <div className="flex flex-wrap gap-x-5">
+                  {ORDER_TYPES.map(([value, label]) => (
+                    <label key={value} className="flex min-h-11 items-center gap-2 text-sm font-normal">
+                      <input key={String(data?.order_types.includes(value))} type="checkbox" name="orderTypes" value={value} defaultChecked={data?.order_types.includes(value)} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                {noTypes && <Notice>Keep at least one order type turned on.</Notice>}
+              </div>
+              <label className="field">
+                Seats on a new table
+                <input name="defaultSeats" type="number" min={1} max={100} defaultValue={data?.default_seats ?? 4} required />
+              </label>
+              <label className="flex min-h-11 items-center gap-2 text-sm">
+                <input type="checkbox" name="showItemPhotos" defaultChecked={data?.show_item_photos} />
+                Show item photos in the POS
+              </label>
+              <label className="flex min-h-11 items-center gap-2 text-sm">
+                <input type="checkbox" name="showFoodMarks" defaultChecked={data?.show_food_marks} />
+                Show veg and non-veg marks in the POS
+              </label>
+            </section>
+
+            <section className="card grid gap-1 p-5">
+              <h2 className="text-lg">Notifications</h2>
+              <p className="hint mb-1">Choose what appears on the bell for your whole team.</p>
+              {ALERTS.map(([key, label]) => (
+                <label key={key} className="flex min-h-10 items-center gap-2 text-sm">
+                  <input type="checkbox" name="alerts" value={key} defaultChecked={!data?.muted_alerts.includes(key)} />
+                  {label}
+                </label>
+              ))}
+            </section>
+
             {save.error && <Notice>{save.error.message}</Notice>}
             {save.isSuccess && <Notice tone="ok">Saved.</Notice>}
             {canWrite && <button className="btn btn-primary justify-self-start" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save changes'}</button>}
@@ -169,6 +341,11 @@ export function Settings() {
             </aside>
           )}
         </form>
+        <div className="mt-5 grid max-w-3xl gap-5">
+          <PaymentMethods canWrite={canWrite} />
+          {canWrite && <SampleData />}
+          {canBackup && <Backup />}
+        </div>
       </Loading>
     </>
   )

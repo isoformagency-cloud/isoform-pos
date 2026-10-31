@@ -7,6 +7,7 @@ import { ChooseBranch, useWorkingBranch } from '../components/BranchPicker'
 import { Badge, Empty, Modal, Notice, PageHeader } from '../components/ui'
 import { api, ApiError, supabase } from '../lib/api'
 import { downloadCsv, localDate, money, shortDate } from '../lib/format'
+import { shrink } from '../lib/photo'
 
 const CATEGORIES: Record<string, string> = {
   ingredients: 'Ingredients', rent: 'Rent', electricity: 'Electricity', salaries: 'Salaries',
@@ -26,17 +27,6 @@ const PERIODS: Record<string, { label: string; range: () => { from?: string; to?
   d30: { label: 'Last 30 days', range: () => ({ from: localDate(29) }) },
   d90: { label: 'Last 90 days', range: () => ({ from: localDate(89) }) },
   all: { label: 'All time', range: () => ({}) },
-}
-
-/** Phone photos are large, so they're shrunk here before upload. */
-async function shrink(file: File) {
-  const image = await createImageBitmap(file)
-  const scale = Math.min(1, 1600 / Math.max(image.width, image.height))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(image.width * scale)
-  canvas.height = Math.round(image.height * scale)
-  canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height)
-  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not read that photo.'))), 'image/jpeg', 0.78))
 }
 
 async function attachReceipt(id: string, file: File) {

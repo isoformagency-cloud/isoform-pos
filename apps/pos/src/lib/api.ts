@@ -5,6 +5,7 @@ declare const __SUPABASE_URL__: string
 declare const __SUPABASE_ANON_KEY__: string
 
 export const supabase = createClient(__SUPABASE_URL__, __SUPABASE_ANON_KEY__)
+export const menuPhoto = (path: string) => `${__SUPABASE_URL__}/storage/v1/object/public/menu-photos/${path}`
 
 const DEVICE_KEY = 'isoform.device'
 const BRANCH_KEY = 'isoform.branch'

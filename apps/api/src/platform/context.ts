@@ -3,7 +3,7 @@ import type { Context, MiddlewareHandler } from 'hono'
 import { z } from 'zod'
 import { tx, type Db, type DbContext } from './db.js'
 import { AppError, forbidden } from './errors.js'
-import { can, type Permission, type Role } from './permissions.js'
+import { can, permissionsFor, type Overrides, type Permission, type Role } from './permissions.js'
 import { verifyToken } from './supabase.js'
 
 export interface Actor {
@@ -13,6 +13,7 @@ export interface Actor {
   role: Role
   displayName: string
   branchIds: string[]
+  permissions: Permission[]
 }
 
 export type Env = { Variables: { actor: Actor; rawBody?: string } }
@@ -37,7 +38,7 @@ export const session: MiddlewareHandler<Env> = async (c, next) => {
 
   const wanted = c.req.header('x-tenant-id')
   // One transaction, so a request costs as few database trips as possible.
-  const { membership, status, branchIds } = await tx({ userId }, async (db) => {
+  const { membership, status, branchIds, overrides } = await tx({ userId }, async (db) => {
     const { rows: memberships } = await db.query(
       `select id, tenant_id, role, display_name from app.memberships where user_id = $1 and status = 'active'`,
       [userId],
@@ -56,10 +57,12 @@ export const session: MiddlewareHandler<Env> = async (c, next) => {
                 where b.is_active and (${chosen.role === 'owner'} or exists (
                   select 1 from app.branch_memberships bm
                    where bm.membership_id = ${db.escapeLiteral(chosen.id)} and bm.branch_id = b.id))
-         )::text[] as branch_ids`,
-    )) as unknown as { rows: { status: string; branch_ids: string[] }[] }[]
+         )::text[] as branch_ids,
+         (select coalesce(jsonb_object_agg(module, level), '{}') from app.role_permissions
+           where role = ${db.escapeLiteral(chosen.role)}) as overrides`,
+    )) as unknown as { rows: { status: string; branch_ids: string[]; overrides: Overrides }[] }[]
     const access = results[1].rows[0]
-    return { membership: chosen, status: access.status, branchIds: access.branch_ids }
+    return { membership: chosen, status: access.status, branchIds: access.branch_ids, overrides: access.overrides }
   })
   if (status !== 'active') throw new AppError(403, 'business_inactive', 'This business account is not active.')
 
@@ -73,17 +76,18 @@ export const session: MiddlewareHandler<Env> = async (c, next) => {
     role: membership.role,
     displayName: membership.display_name,
     branchIds: branch ? [branch] : branchIds,
+    permissions: permissionsFor(membership.role, overrides),
   })
   await next()
 }
 
 export const requires = (permission: Permission): MiddlewareHandler<Env> => async (c, next) => {
-  if (!can(c.get('actor').role, permission)) throw forbidden()
+  if (!can(c.get('actor'), permission)) throw forbidden()
   await next()
 }
 
 export const requiresAny = (...permissions: Permission[]): MiddlewareHandler<Env> => async (c, next) => {
-  if (!permissions.some((permission) => can(c.get('actor').role, permission))) throw forbidden()
+  if (!permissions.some((permission) => can(c.get('actor'), permission))) throw forbidden()
   await next()
 }
 
