@@ -25,6 +25,14 @@ interface Row {
 
 const round2 = (value: number) => (Math.round(value * 100) / 100).toFixed(2)
 
+/** The last open payment always takes whatever is left, so the payments always add up to the bill. */
+function settle(rows: Row[], target: number) {
+  const last = rows.filter((row) => !row.saved).at(-1)
+  if (!last) return rows
+  const others = rows.reduce((sum, row) => (row === last ? sum : sum + Number(row.amount || 0)), 0)
+  return rows.map((row) => (row === last ? { ...row, amount: round2(Math.max(target - others, 0)) } : row))
+}
+
 function quickCash(amount: number) {
   const steps = [50, 100, 200, 500, 2000].map((step) => Math.ceil(amount / step) * step)
   return [...new Set(steps.filter((value) => value > amount))].slice(0, 3)
@@ -42,11 +50,13 @@ export function Checkout({ me }: { me: Me }) {
   const settings = useQuery({ queryKey: ['pos-settings'], queryFn: () => api('/pos-settings') })
 
   const [rows, setRows] = useState<Row[]>([])
+  const [target, setTarget] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ text: string; code?: string } | null>(null)
   const [change, setChange] = useState<number | null>(null)
   const [pdfError, setPdfError] = useState('')
   const started = useRef(false)
+  const amounts = useRef<HTMLDivElement>(null)
 
   const bill = invoice.data
   const list: any[] = methods.data?.items ?? []
@@ -56,29 +66,31 @@ export function Checkout({ me }: { me: Me }) {
   useEffect(() => {
     if (started.current || !bill || list.length === 0 || due <= 0) return
     started.current = true
+    setTarget(due)
     setRows([{ id: crypto.randomUUID(), methodId: list[0].id, amount: bill.outstanding, reference: '', received: '', saved: false }])
   }, [bill, list, due])
 
+  useEffect(() => {
+    if (rows.length > 1) amounts.current?.querySelector<HTMLInputElement>('input[data-amount]:not([readonly]):not(:disabled)')?.focus()
+  }, [rows.length])
+
   const update = (rowId: string, patch: Partial<Row>) => {
     setError(null)
-    setRows((all) => all.map((row) => (row.id === rowId ? { ...row, ...patch } : row)))
+    setRows((all) => settle(all.map((row) => (row.id === rowId ? { ...row, ...patch } : row)), target))
   }
 
+  const lastOpen = rows.filter((row) => !row.saved).at(-1)
   const entered = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0)
-  const left = Number(round2(due + rows.filter((row) => row.saved).reduce((sum, row) => sum + Number(row.amount), 0) - entered))
-  const remaining = Math.max(left, 0)
-  const over = left < 0
+  const over = Number(round2(entered - target)) > 0
+  const nothingLeft = rows.length > 1 && !over && Number(lastOpen?.amount) === 0
   const valid = rows.length > 0 && rows.every((row) => Number(row.amount) > 0) && !over
+  const toRecord = rows.reduce((sum, row) => (row.saved ? sum : sum + Number(row.amount || 0)), 0)
 
   function addRow() {
     const unused = list.find((method) => !rows.some((row) => row.methodId === method.id)) ?? list[0]
-    const last = rows.at(-1)
-    // With the whole bill already entered, halve the last payment so there's something to split.
-    const halve = remaining <= 0 && last && !last.saved
-    const half = halve ? round2(Math.floor(Number(last.amount) * 50) / 100) : ''
-    const kept = halve ? rows.map((row) => (row === last ? { ...row, amount: half, received: '' } : row)) : rows
-    const amount = halve ? round2(Number(last.amount) - Number(half)) : round2(remaining)
-    setRows([...kept, { id: crypto.randomUUID(), methodId: unused.id, amount, reference: '', received: '', saved: false }])
+    // The payment that was taking the whole bill now asks how much, and the new one takes the rest.
+    const asked = rows.map((row) => (row === lastOpen ? { ...row, amount: '', received: '' } : row))
+    setRows(settle([...asked, { id: crypto.randomUUID(), methodId: unused.id, amount: '', reference: '', received: '', saved: false }], target))
   }
 
   async function record() {
@@ -158,7 +170,7 @@ export function Checkout({ me }: { me: Me }) {
 
             {!canRecord && <Notice>Only cashiers and managers can record payments.</Notice>}
 
-            <div className="grid gap-3">
+            <div ref={amounts} className="grid gap-3">
               {rows.map((row, index) => {
                 const method = list.find((item) => item.id === row.methodId)
                 const kind: string = method?.kind
@@ -169,7 +181,7 @@ export function Checkout({ me }: { me: Me }) {
                       <div className="mb-2 flex items-center justify-between">
                         <p className="text-sm font-medium">Payment {index + 1}{row.saved ? ' · saved' : ''}</p>
                         {!row.saved && (
-                          <button aria-label={`Remove payment ${index + 1}`} className="btn btn-ghost btn-icon !min-h-8 !w-8" onClick={() => setRows(rows.filter((item) => item.id !== row.id))}>
+                          <button aria-label={`Remove payment ${index + 1}`} className="btn btn-ghost btn-icon !min-h-8 !w-8" onClick={() => setRows(settle(rows.filter((item) => item.id !== row.id), target))}>
                             <Trash2 size={15} aria-hidden="true" />
                           </button>
                         )}
@@ -197,8 +209,12 @@ export function Checkout({ me }: { me: Me }) {
 
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <label className="field">
-                        Amount
-                        <input disabled={row.saved || busy} value={row.amount} inputMode="decimal" onChange={(event) => update(row.id, { amount: event.target.value.replace(/[^\d.]/g, '') })} />
+                        {row !== lastOpen ? 'How much?' : rows.length > 1 ? 'The rest of the bill' : 'Amount'}
+                        {row === lastOpen || row.saved ? (
+                          <input data-amount readOnly tabIndex={-1} value={row.amount} className="tnum !border-line-soft !bg-paper-soft font-medium" />
+                        ) : (
+                          <input data-amount disabled={busy} value={row.amount} inputMode="decimal" placeholder="0.00" onChange={(event) => update(row.id, { amount: event.target.value.replace(/[^\d.]/g, '') })} />
+                        )}
                       </label>
 
                       {kind === 'cash' && (
@@ -216,7 +232,7 @@ export function Checkout({ me }: { me: Me }) {
                       )}
                     </div>
 
-                    {kind === 'cash' && !row.saved && !busy && (
+                    {kind === 'cash' && !row.saved && !busy && Number(row.amount) > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <button className="btn btn-secondary btn-sm" onClick={() => update(row.id, { received: row.amount })}>Exact</button>
                         {quickCash(Number(row.amount)).map((value) => (
@@ -283,12 +299,12 @@ export function Checkout({ me }: { me: Me }) {
                 </Notice>
               </div>
             )}
-            {over && <div className="mt-3"><Notice>That’s {money(round2(-left))} more than is due.</Notice></div>}
-            {!busy && !over && remaining > 0 && rows.length > 0 && <p className="tnum mt-3 text-sm text-wait">{money(round2(remaining))} will stay unpaid on this bill.</p>}
+            {over && <div className="mt-3"><Notice>That’s {money(round2(entered - target))} more than the bill.</Notice></div>}
+            {nothingLeft && <div className="mt-3"><Notice>That covers the whole bill. Remove the last payment.</Notice></div>}
 
             {canRecord && (
               <button className="btn btn-brand mt-3 w-full" disabled={!valid || busy} onClick={record}>
-                {busy ? 'Saving…' : `Record ${money(round2(entered - rows.filter((row) => row.saved).reduce((sum, row) => sum + Number(row.amount), 0)))}`}
+                {busy ? 'Saving…' : `Record ${money(round2(toRecord))}`}
               </button>
             )}
             <p className="mt-2 text-xs text-ink-soft">This records money you’ve already received. It doesn’t take a payment.</p>
