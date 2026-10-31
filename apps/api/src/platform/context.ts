@@ -29,6 +29,8 @@ export const dbContext = (actor: Actor): DbContext => ({
  * Headers can only narrow access to something the user already has.
  */
 export const session: MiddlewareHandler<Env> = async (c, next) => {
+  // Every module adds this check, and a request passes through them all on its way, so it only runs once.
+  if (c.get('actor')) return next()
   const token = c.req.header('authorization')?.replace(/^Bearer /, '')
   if (!token) throw new AppError(401, 'invalid_session', 'Please sign in.')
   const userId = await verifyToken(token)

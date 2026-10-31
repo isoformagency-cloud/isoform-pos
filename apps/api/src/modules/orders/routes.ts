@@ -80,7 +80,7 @@ async function loadOrder(db: Db, id: string) {
     `select o.id, o.branch_id, o.display_number, o.order_type, o.aggregator, o.aggregator_reference, o.table_label, o.status,
             o.service_charge_percent::text, o.business_date::text, o.notes, o.version, o.created_at, o.cancel_reason, o.confirmed_at,
             o.held_at, o.guest_count, o.delivery_address, o.table_id,
-            o.customer_id, c.name as customer_name, c.phone as customer_phone
+            o.customer_id, c.name as customer_name, c.phone as customer_phone, c.notes as customer_notes
        from app.orders o left join app.customers c on c.id = o.customer_id where o.id = $1`,
     [id],
   )

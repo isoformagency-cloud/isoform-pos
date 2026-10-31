@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { audit, command, dbContext, readBody, requires, session, type Actor, type Env } from '../../platform/context.js'
 import { tx, type Db } from '../../platform/db.js'
 import { AppError, notFound } from '../../platform/errors.js'
+import { deductForSale } from '../inventory/routes.js'
 import { assertDiscountLimit } from '../orders/discount-limit.js'
 import { calculateBills, divide, financialYear, fromMilli, milli, paise, rupees, type Bill, type BillPiece, type Discount } from './calculate.js'
 
@@ -255,6 +256,7 @@ billing.post('/orders/:id/finalize', requires('billing.write'), async (c) => {
       saved.push({ ...invoice, grandTotal: bill.grandTotal })
       await audit(db, actor, 'invoice.issued', 'invoice', invoice.id, { number: invoice.number, grandTotal: bill.grandTotal })
     }
+    await deductForSale(db, actor, data.branch.id, orderId)
     return { invoices: saved }
   })
 })

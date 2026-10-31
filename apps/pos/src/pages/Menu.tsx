@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Me } from '../App'
 import { useAsk } from '../components/Ask'
 import { useWorkingBranch } from '../components/BranchPicker'
+import { RecipeDialog } from '../components/RecipeDialog'
 import { Loading, Notice, PageHeader } from '../components/ui'
 import { api } from '../lib/api'
 
@@ -21,6 +22,7 @@ type Panel = 'product' | 'category' | 'rate' | 'addon' | null
 export function Menu({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const [panel, setPanel] = useState<Panel>(null)
+  const [recipeFor, setRecipeFor] = useState<any | null>(null)
   const { ask, node } = useAsk()
   const branch = useWorkingBranch(me)
   const canWrite = me.permissions.includes('menu.write')
@@ -78,6 +80,7 @@ export function Menu({ me }: { me: Me }) {
   return (
     <>
       {node}
+      {recipeFor && <RecipeDialog product={recipeFor} onClose={() => setRecipeFor(null)} />}
       <PageHeader title="Menu" text={branch ? 'Showing prices for the selected branch.' : 'Showing menu prices for all branches.'} action={actions} />
 
       {panel === 'category' && (
@@ -155,12 +158,15 @@ export function Menu({ me }: { me: Me }) {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className={`font-medium ${product.is_active ? '' : 'text-ink-soft line-through'}`}>{product.name}</p>
                       {canWrite && (
-                        <button
-                          className="btn btn-secondary !min-h-9 text-sm"
-                          onClick={() => change.mutate({ path: `/products/${product.id}`, method: 'PATCH', body: { isActive: !product.is_active } })}
-                        >
-                          {product.is_active ? 'Hide from menu' : 'Show on menu'}
-                        </button>
+                        <span className="flex flex-wrap gap-2">
+                          {me.permissions.includes('inventory.read') && <button className="btn btn-secondary !min-h-9 text-sm" onClick={() => setRecipeFor(product)}>Recipe</button>}
+                          <button
+                            className="btn btn-secondary !min-h-9 text-sm"
+                            onClick={() => change.mutate({ path: `/products/${product.id}`, method: 'PATCH', body: { isActive: !product.is_active } })}
+                          >
+                            {product.is_active ? 'Hide from menu' : 'Show on menu'}
+                          </button>
+                        </span>
                       )}
                     </div>
                     {canWrite && data.addons.length > 0 && (
