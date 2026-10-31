@@ -365,7 +365,7 @@ export function Orders({ me }: { me: Me }) {
             {open && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {!confirmed && !empty && canWrite && <button className="btn btn-primary w-full" disabled={change.isPending} onClick={confirmOrder}>Confirm order</button>}
-                {confirmed && <p className="w-full text-sm text-ink-soft"><Lock size={13} className="mr-1 inline" aria-hidden="true" />Confirmed. Items can’t be changed, but a discount can be added.</p>}
+                {confirmed && <p className="w-full text-sm text-ink-soft"><Lock size={13} className="mr-1 inline" aria-hidden="true" />Confirmed. Items can’t be changed. {canDiscount ? 'You can still add a discount.' : 'A manager can still add a discount.'}</p>}
                 {canDiscount && !empty && <button className="btn btn-secondary" onClick={discount}>Discount</button>}
                 {!confirmed && !empty && canWrite && <button className="btn btn-secondary" onClick={serviceCharge}>Service charge</button>}
                 {canBill && <button className="btn btn-secondary" onClick={customer}>{current.customer_name ?? 'Add customer'}</button>}
