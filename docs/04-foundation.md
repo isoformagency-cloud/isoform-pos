@@ -141,3 +141,9 @@ Tests: 229 of 229 API tests in one clean full run of 50 minutes, 94 of 94 databa
 
 The owner asked that the amount can't change at checkout. On a single payment it is now fixed to the bill. Only Split payment asks for an amount, and the last payment always takes the rest, so payments add up to the bill. Part-paying a bill at checkout is no longer offered. This is a rule on the screen: the API still accepts a smaller payment, because split payments are saved one at a time.
 
+## Branch picker (31 October 2026)
+
+Adding a second branch left the POS asking for a branch with no easy way to choose one. The branch selector now sits in the top bar on every screen, screens update as soon as it changes, and POS, Tables and Cash ask on the page when no branch is chosen. Adding a branch refreshes the session straight away. Changing branch closes any open order on the POS screen. The Cash page now sends the chosen branch, which it did not before.
+
+The same check found a loop in how New order cleared the screen, which could clear an order just started. It is fixed. Tested on screen with two branches. The API did not change, so no API tests ran.
+
