@@ -147,3 +147,20 @@ Adding a second branch left the POS asking for a branch with no easy way to choo
 
 The same check found a loop in how New order cleared the screen, which could clear an order just started. It is fixed. Tested on screen with two branches. The API did not change, so no API tests ran.
 
+## Customers, expenses and inventory, stages 6 to 8 (31 October 2026)
+
+Built: a Customers page with search, sorting, a summary and profiles. An Expenses page with categories, receipt photos, totals against sales, export and voiding. An Inventory page with ingredients, stock in and out, stock counts, history, suppliers, recipes and low stock alerts. A stock purchase can be recorded as an expense in the same step.
+
+Decisions: `stock_moves` is append-only and a trigger keeps each level in step, so a level can't drift from its history. Stock is deducted when the bill is issued, inside the same transaction, and never blocks a sale. Expenses are voided, not deleted. Receipts sit in the private `receipts` bucket and open through signed links, so the POS security policy now allows images from Supabase. Run `scripts/create-receipts-bucket.mjs` once on any new environment.
+
+Two platform faults turned up during the on-screen check and are fixed:
+
+- Each router ran the sign-in check again, so one request checked up to 13 times. Inventory took 8 seconds locally and now takes about 1. The check runs once per request.
+- A failed fetch of Supabase's signing keys reported "Please sign in again" during a network drop, even though the sign-in was fine. It now returns a 503 that the POS retries.
+
+Checked on screen: selling a Dosa with a recipe took coffee beans from 4 kg to 3.5 kg, marked them Low, lowered stock value and logged the sale against the order. Receipt upload and viewing worked, and the new pages had no sideways scroll at 375px wide.
+
+Tests: 262 of 262 API tests in one full run of 36 minutes, down from 50 despite 33 more tests, because of the sign-in fix. 94 of 94 database rules, though those checks don't yet attack the new tables. The API tests cover them: other businesses' customers, expenses and stock stay hidden. Vitest warned once that the billing test worker was slow to exit, and every test still passed.
+
+Known limits: a recipe can't vary by size. The receipt image under the live security policy and the speed gain on the live site still need checking after deployment.
+

@@ -351,34 +351,3 @@ payments.post('/refunds/:id/void', requires('payments.verify'), async (c) => {
     return loadPayment(db, refund.payment_id)
   })
 })
-
-// Customers exist only so an unpaid bill has a name attached.
-const newCustomer = z.strictObject({
-  name: z.string().trim().min(2).max(100),
-  phone: z.string().regex(/^[0-9]{10}$/, 'Enter a 10-digit number.'),
-})
-
-payments.get('/customers', requires('customers.read'), async (c) => {
-  const search = z.string().trim().max(60).default('').parse(c.req.query('search'))
-  const items = await tx(dbContext(c.get('actor')), async (db) => {
-    const { rows } = await db.query(
-      `select id, name, phone from app.customers where name ilike $1 or phone like $1 order by name limit 20`,
-      [`%${search.replace(/[%_\\]/g, '\\$&')}%`],
-    )
-    return rows
-  })
-  return c.json({ items })
-})
-
-payments.post('/customers', requires('customers.write'), async (c) => {
-  const input = await readBody(c, newCustomer)
-  return command(c, 201, async (db, actor) => {
-    const { rows: [row] } = await db.query(
-      `insert into app.customers (tenant_id, name, phone) values ($1, $2, $3)
-       on conflict (tenant_id, phone) do update set name = excluded.name returning id, name, phone`,
-      [actor.tenantId, input.name, input.phone],
-    )
-    return row
-  })
-})
-

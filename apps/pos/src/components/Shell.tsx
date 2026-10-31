@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle, Armchair, Bell, Building2, ChartColumn, ChefHat, CircleDot, CreditCard, FileText, LayoutDashboard, LogOut, Menu as MenuIcon, MonitorSmartphone,
-  MoreHorizontal, PauseCircle, Plus, Receipt, Search, Settings, ShoppingCart, Users, UtensilsCrossed, Wallet, X,
+  MoreHorizontal, Package, PauseCircle, Plus, Receipt, ReceiptIndianRupee, Search, Settings, ShoppingCart, UserRound, Users, UtensilsCrossed, Wallet, X,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import type { Me } from '../App'
@@ -18,7 +18,7 @@ interface NavItem {
   icon: typeof Receipt
   needs?: string
   orNeeds?: string
-  count?: 'runningOrders' | 'unpaidBills' | 'paymentsToVerify' | 'kitchenActive'
+  count?: 'runningOrders' | 'unpaidBills' | 'paymentsToVerify' | 'kitchenActive' | 'lowStock'
 }
 
 const GROUPS: { label: string; items: NavItem[] }[] = [
@@ -39,6 +39,9 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
     label: 'Manage',
     items: [
       { to: '/menu', label: 'Menu', icon: UtensilsCrossed, needs: 'menu.read' },
+      { to: '/inventory', label: 'Inventory', icon: Package, needs: 'inventory.read', count: 'lowStock' },
+      { to: '/customers', label: 'Customers', icon: UserRound, needs: 'customers.read' },
+      { to: '/expenses', label: 'Expenses', icon: ReceiptIndianRupee, needs: 'expenses.read' },
       { to: '/staff', label: 'Staff', icon: Users, needs: 'staff.read' },
       { to: '/devices', label: 'Devices', icon: MonitorSmartphone, needs: 'devices.manage' },
       { to: '/branches', label: 'Branches', icon: Building2, needs: 'branches.read' },
@@ -64,6 +67,7 @@ export interface Alerts {
   paymentsToVerify: number
   kitchenActive: number
   kitchenDelayed: number
+  lowStock: number
 }
 
 const allowed = (me: Me, item: NavItem) =>
@@ -185,6 +189,7 @@ function AlertBell({ alerts }: { alerts?: Alerts }) {
 
   const rows = [
     { count: alerts?.kitchenDelayed, to: '/kitchen', icon: AlertTriangle, text: (n: number) => `${n} kitchen ${n === 1 ? 'ticket' : 'tickets'} delayed` },
+    { count: alerts?.lowStock, to: '/inventory', icon: Package, text: (n: number) => `${n} ${n === 1 ? 'ingredient' : 'ingredients'} low or out of stock` },
     { count: alerts?.paymentsToVerify, to: '/payments', icon: CreditCard, text: (n: number) => `${n} ${n === 1 ? 'payment' : 'payments'} to confirm` },
     { count: alerts?.unpaidBills, to: '/invoices', icon: FileText, text: (n: number) => `${n} unpaid ${n === 1 ? 'bill' : 'bills'}` },
     { count: alerts?.heldOrders, to: '/orders?tab=held', icon: PauseCircle, text: (n: number) => `${n} ${n === 1 ? 'order' : 'orders'} on hold` },

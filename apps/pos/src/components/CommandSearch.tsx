@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Receipt, Search, User, Users, UtensilsCrossed, type LucideIcon } from 'lucide-react'
+import { FileText, Package, Receipt, Search, User, Users, UtensilsCrossed, type LucideIcon } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { api } from '../lib/api'
 import { money } from '../lib/format'
@@ -34,13 +34,19 @@ const hitsFrom = (data: any): { group: string; hits: Hit[] }[] => [
   {
     group: 'Customers',
     hits: (data?.customers ?? []).map((item: any) => ({
-      key: `customer-${item.id}`, icon: User, title: item.name, note: item.phone, to: `/orders?tab=all&q=${item.phone}`,
+      key: `customer-${item.id}`, icon: User, title: item.name, note: item.phone, to: `/customers?open=${item.id}`,
     })),
   },
   {
     group: 'Menu',
     hits: (data?.menu ?? []).map((item: any) => ({
       key: `menu-${item.id}`, icon: UtensilsCrossed, title: item.name, note: item.category, to: '/menu',
+    })),
+  },
+  {
+    group: 'Stock',
+    hits: (data?.stock ?? []).map((item: any) => ({
+      key: `stock-${item.id}`, icon: Package, title: item.name, note: item.category, to: '/inventory',
     })),
   },
   {

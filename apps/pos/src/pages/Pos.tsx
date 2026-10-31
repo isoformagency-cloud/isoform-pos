@@ -458,6 +458,7 @@ export function Pos({ me }: { me: Me }) {
 
         <div className="thin-scroll min-h-40 flex-1 overflow-y-auto px-3">
           {error && <div className="mt-3"><Notice>{error}</Notice></div>}
+          {current?.customer_notes && <p className="mt-3 rounded-xl bg-wait-tint px-3 py-2 text-sm text-wait">{current.customer_name}: {current.customer_notes}</p>}
           {empty && (
             <div className="grid justify-items-center gap-1 py-12 text-center">
               <Receipt size={24} strokeWidth={1.5} className="text-ink-faint" aria-hidden="true" />

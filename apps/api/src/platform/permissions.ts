@@ -7,6 +7,7 @@ const MANAGER = [
   'payments.read', 'payments.record', 'payments.verify', 'payments.refund',
   'cash.use', 'cash.move', 'cash.review', 'customers.read', 'customers.write', 'reports.read',
   'tables.read', 'tables.use', 'tables.manage', 'kitchen.read', 'kitchen.update',
+  'expenses.read', 'expenses.write', 'inventory.read', 'inventory.write',
 ] as const
 const OWNER = [...MANAGER, 'business.write', 'branches.write'] as const
 
@@ -17,10 +18,10 @@ const FRONTLINE: readonly Permission[] = ['branches.read', 'menu.read', 'orders.
 const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   owner: OWNER,
   manager: MANAGER,
-  accountant: ['business.read', 'branches.read', 'menu.read', 'orders.read', 'billing.read', 'payments.read', 'payments.verify', 'cash.review', 'customers.read', 'reports.read'],
+  accountant: ['business.read', 'branches.read', 'menu.read', 'orders.read', 'billing.read', 'payments.read', 'payments.verify', 'cash.review', 'customers.read', 'reports.read', 'expenses.read', 'inventory.read'],
   cashier: [...FRONTLINE, 'orders.discount_limited', 'billing.read', 'billing.write', 'payments.read', 'payments.record', 'cash.use', 'customers.read', 'customers.write'],
   waiter: FRONTLINE,
-  kitchen: ['branches.read', 'menu.read', 'orders.read', 'kitchen.read', 'kitchen.update'],
+  kitchen: ['branches.read', 'menu.read', 'orders.read', 'kitchen.read', 'kitchen.update', 'inventory.read'],
 }
 
 export const can = (role: Role, permission: Permission) => ROLE_PERMISSIONS[role].includes(permission)

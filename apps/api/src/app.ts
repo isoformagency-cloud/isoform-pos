@@ -8,7 +8,10 @@ import { AppError } from './platform/errors.js'
 import { signalBranches } from './platform/live.js'
 import { billing } from './modules/billing/routes.js'
 import { cash } from './modules/cash/routes.js'
+import { customers } from './modules/customers/routes.js'
+import { expenses } from './modules/expenses/routes.js'
 import { identity, pinLogin } from './modules/identity/routes.js'
+import { inventory } from './modules/inventory/routes.js'
 import { kitchen } from './modules/kitchen/routes.js'
 import { menu } from './modules/menu/routes.js'
 import { orders } from './modules/orders/routes.js'
@@ -48,6 +51,9 @@ app.route('/', cash)
 app.route('/', reports)
 app.route('/', tables)
 app.route('/', kitchen)
+app.route('/', customers)
+app.route('/', expenses)
+app.route('/', inventory)
 app.route('/', workspace)
 
 app.notFound((c) => c.json({ code: 'not_found', message: 'That route does not exist.' }, 404))

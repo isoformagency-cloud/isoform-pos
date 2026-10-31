@@ -1,6 +1,6 @@
 # ISOFORM POS: Feature list from the old app
 
-Stages 1 to 5 are approved and built, with the differences listed below. Stages 6 to 11 are not built.
+Stages 1 to 8 are approved and built, with the differences listed below. Stages 9 to 11 are not built.
 
 Source: https://isoform-cafe.netlify.app/app, reviewed on 31 October 2026. Main screens were opened in the demo café. Sign-up, onboarding, checkout and pop-ups were read from the site's public code and not clicked through.
 
@@ -32,6 +32,16 @@ To approve, reply with the stages you want and the numbers to skip, for example 
 - **34, sent items:** once with the kitchen, an item's quantity can't change. To add more, add a new line. Only owners and managers can remove a sent item, which was the rule planned in stage 2.
 - **40, live updates:** screens update on their own within about a second of a change. If the connection drops, they fall back to refreshing every 10 to 20 seconds.
 - **Added setting:** Use the kitchen display can be turned off in Settings, for cafés with no kitchen screen. It wasn't in the list.
+
+## What changed from this list in stages 6 to 8
+
+- **41 to 44, customers:** spend counts issued bills less credit notes, so it matches the books. The profile shows the latest 20 orders. Allergies go in the notes box.
+- **45, expenses:** an expense can't be deleted. Voiding keeps it on record, and a voided cash expense puts the money back in the drawer. Paying from the drawer needs an open cash session.
+- **46, receipt photo:** JPEG, up to 5 MB, kept private. It opens through a short-lived link.
+- **49 to 53, stock:** ingredients and suppliers are shared across branches. Stock levels and history are kept per branch.
+- **54, recipes:** a recipe belongs to the menu item, not its size, so Regular and Large take off the same amount.
+- **54, sales and stock:** stock comes off when the bill is issued. A sale is never blocked by low stock, so a level can go below zero until it is corrected. A credit note doesn't return stock, because the food has usually been made.
+- **Access:** cashiers can't see inventory or expenses. Accountants can view both, kitchen staff can view stock, and changes need an owner or manager.
 
 ## Stage 1: Look and layout
 

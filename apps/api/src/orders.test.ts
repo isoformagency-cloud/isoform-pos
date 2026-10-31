@@ -81,7 +81,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const tenant of [a.tenantId, b.tenantId]) {
-    for (const table of ['audit_log', 'idempotency_keys', 'invoice_lines', 'invoices', 'invoice_series', 'order_discounts', 'order_item_addons', 'order_status_history', 'kitchen_ticket_items', 'order_items', 'kitchen_tickets', 'orders', 'dining_tables', 'floor_areas', 'customers',
+    for (const table of ['audit_log', 'idempotency_keys', 'invoice_lines', 'invoices', 'invoice_series', 'stock_moves', 'stock_levels', 'recipe_lines', 'stock_items', 'suppliers', 'expenses', 'order_discounts', 'order_item_addons', 'order_status_history', 'kitchen_ticket_items', 'order_items', 'kitchen_tickets', 'orders', 'dining_tables', 'floor_areas', 'customers',
       'branch_variant_overrides', 'product_addons', 'addons', 'product_variants', 'products', 'categories', 'tax_rates',
       'branch_memberships', 'registers', 'payment_methods', 'memberships', 'branches', 'tax_registrations']) {
       await db.query(`delete from app.${table} where tenant_id = $1`, [tenant])

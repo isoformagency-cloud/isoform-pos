@@ -65,6 +65,13 @@ workspace.get('/search', async (c) => {
       )
       found.menu = rows
     }
+    if (can(actor.role, 'inventory.read')) {
+      const { rows } = await db.query(
+        `select id, name, category from app.stock_items where name ilike $1 and is_active order by name limit 6`,
+        [like],
+      )
+      found.stock = rows
+    }
     if (can(actor.role, 'staff.read')) {
       const { rows } = await db.query(
         `select id, display_name, role from app.memberships where display_name ilike $1 and status = 'active' order by display_name limit 6`,
@@ -89,11 +96,22 @@ workspace.get('/alerts', async (c) => {
         where o.status = 'open' and o.branch_id = any($1::uuid[])`,
       [actor.branchIds],
     )
-    const counts = { runningOrders: 0, heldOrders: 0, leftoverOrders: 0, unpaidBills: 0, paymentsToVerify: 0, kitchenActive: 0, kitchenDelayed: 0 }
+    const counts = { runningOrders: 0, heldOrders: 0, leftoverOrders: 0, unpaidBills: 0, paymentsToVerify: 0, kitchenActive: 0, kitchenDelayed: 0, lowStock: 0 }
     if (can(actor.role, 'orders.read')) {
       counts.runningOrders = orders.running
       counts.heldOrders = orders.held
       counts.leftoverOrders = orders.leftover
+    }
+    if (can(actor.role, 'inventory.read')) {
+      // Low or out in any branch this person works in.
+      const { rows: [row] } = await db.query(
+        `select count(*)::int as low from app.stock_items s
+           cross join unnest($1::uuid[]) as b(id)
+           left join app.stock_levels l on l.stock_item_id = s.id and l.branch_id = b.id
+          where s.is_active and coalesce(l.quantity, 0) <= s.min_stock`,
+        [actor.branchIds],
+      )
+      counts.lowStock = row.low
     }
     if (can(actor.role, 'kitchen.read')) {
       const { rows: [row] } = await db.query(
