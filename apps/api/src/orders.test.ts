@@ -81,7 +81,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const tenant of [a.tenantId, b.tenantId]) {
-    for (const table of ['audit_log', 'idempotency_keys', 'invoice_lines', 'invoices', 'invoice_series', 'order_discounts', 'order_item_addons', 'order_status_history', 'order_items', 'orders',
+    for (const table of ['audit_log', 'idempotency_keys', 'invoice_lines', 'invoices', 'invoice_series', 'order_discounts', 'order_item_addons', 'order_status_history', 'order_items', 'orders', 'customers',
       'branch_variant_overrides', 'product_addons', 'addons', 'product_variants', 'products', 'categories', 'tax_rates',
       'branch_memberships', 'registers', 'payment_methods', 'memberships', 'branches', 'tax_registrations']) {
       await db.query(`delete from app.${table} where tenant_id = $1`, [tenant])
@@ -211,14 +211,43 @@ describe('removing and discounting', () => {
     expect(voided.body.subtotal).toBe('0.00')
     expect(voided.body.items[0].status).toBe('voided')
   })
-  it('stops a cashier giving a discount', async () => {
+  it('stops a cashier going over the discount limit', async () => {
     const order = await open()
     await addItem(order.body.id)
-    const body = { id: crypto.randomUUID(), kind: 'percent', value: '10', reason: 'Regular customer' }
-    expect((await call('POST', `/orders/${order.body.id}/discounts`, cashierA, body)).status).toBe(403)
-    const owner = await call('POST', `/orders/${order.body.id}/discounts`, ownerA, body, { 'x-branch-id': a.branchId })
+    const body = { id: crypto.randomUUID(), kind: 'percent', value: '25', reason: 'Regular customer' }
+    const refused = await call('POST', `/orders/${order.body.id}/discounts`, cashierA, body)
+    expect(refused.status).toBe(403)
+    expect(refused.body.code).toBe('discount_limit')
+    expect((await call('GET', `/orders/${order.body.id}`, cashierA)).body.discounts).toHaveLength(0)
+    const owner = await call('POST', `/orders/${order.body.id}/discounts`, ownerA, { ...body, value: '10' }, { 'x-branch-id': a.branchId })
     expect(owner.body.discount).toBe('15.00')
     expect(owner.body.after_discount).toBe('135.00')
+  })
+  it('lets a cashier give a quick discount with no reason, up to the limit', async () => {
+    const order = await open()
+    await addItem(order.body.id)
+    const given = await call('POST', `/orders/${order.body.id}/discounts`, cashierA, { id: crypto.randomUUID(), kind: 'percent', value: '20' })
+    expect(given.status).toBe(201)
+    expect(given.body.after_discount).toBe('120.00')
+    expect(given.body.discounts[0].reason).toBe('No reason given')
+  })
+  it('stops a kitchen login giving a discount', async () => {
+    const order = await open()
+    await addItem(order.body.id)
+    expect((await call('POST', `/orders/${order.body.id}/discounts`, kitchenA, { id: crypto.randomUUID(), kind: 'percent', value: '5' })).status).toBe(403)
+  })
+  it('catches a cashier discount pushed over the limit by removing items', async () => {
+    const order = await open()
+    await addItem(order.body.id)
+    const added = (await addItem(order.body.id)).body
+    await call('POST', `/orders/${order.body.id}/discounts`, cashierA, { id: crypto.randomUUID(), kind: 'amount', value: '60' })
+    const line = added.items[1].id
+    const latest = (await call('GET', `/orders/${order.body.id}`, cashierA)).body
+    const voided = await call('POST', `/orders/${order.body.id}/items/${line}/void`, cashierA, { version: latest.version, reason: 'Wrong item' })
+    const billed = await call('POST', `/orders/${order.body.id}/finalize`, cashierA, { version: voided.body.version, invoices: [{ id: crypto.randomUUID() }] })
+    expect(billed.status).toBe(403)
+    expect(billed.body.code).toBe('discount_limit')
+    expect((await call('GET', `/orders/${order.body.id}`, cashierA)).body.status).toBe('open')
   })
   it('refuses a discount above the total', async () => {
     const order = await open()
@@ -283,6 +312,154 @@ describe('confirmed orders', () => {
   it('stops a cashier cancelling a confirmed order', async () => {
     const order = await confirmed()
     expect((await call('POST', `/orders/${order.id}/cancel`, cashierA, { version: order.version, reason: 'Left' })).status).toBe(403)
+  })
+})
+
+describe('POS order details', () => {
+  it('saves guests, delivery address and order type', async () => {
+    const order = (await open(cashierA, { orderType: 'delivery', deliveryAddress: '4 Lake Road', guestCount: 2 })).body
+    expect(order.delivery_address).toBe('4 Lake Road')
+    expect(order.guest_count).toBe(2)
+    const changed = await call('PATCH', `/orders/${order.id}`, cashierA, { version: order.version, orderType: 'aggregator', aggregator: 'Swiggy', guestCount: null })
+    expect(changed.body.order_type).toBe('aggregator')
+    expect(changed.body.aggregator).toBe('Swiggy')
+    expect(changed.body.guest_count).toBeNull()
+    const back = await call('PATCH', `/orders/${order.id}`, cashierA, { version: changed.body.version, orderType: 'takeaway' })
+    expect(back.body.order_type).toBe('takeaway')
+    expect(back.body.aggregator).toBeNull()
+  })
+  it('needs an app name for a delivery app order', async () => {
+    const order = (await open()).body
+    expect((await call('PATCH', `/orders/${order.id}`, cashierA, { version: order.version, orderType: 'aggregator' })).status).toBe(422)
+  })
+  it('locks the order type once confirmed', async () => {
+    const added = (await addItem((await open()).body.id)).body
+    const done = (await call('POST', `/orders/${added.id}/confirm`, cashierA, { version: added.version })).body
+    expect((await call('PATCH', `/orders/${done.id}`, cashierA, { version: done.version, orderType: 'takeaway' })).status).toBe(409)
+  })
+  it('adds and removes a customer', async () => {
+    const order = (await open()).body
+    const customer = (await call('POST', '/customers', cashierA, { name: 'Meera', phone: '9812345670' })).body
+    const added = await call('PATCH', `/orders/${order.id}`, cashierA, { version: order.version, customerId: customer.id })
+    expect(added.body.customer_phone).toBe('9812345670')
+    const removed = await call('PATCH', `/orders/${order.id}`, cashierA, { version: added.body.version, customerId: null })
+    expect(removed.body.customer_id).toBeNull()
+  })
+})
+
+describe('holding orders', () => {
+  it('moves an order off the running list and back', async () => {
+    const order = (await open()).body
+    const held = await call('POST', `/orders/${order.id}/hold`, cashierA, { version: order.version, held: true })
+    expect(held.body.held_at).toBeTruthy()
+    const running = (await call('GET', '/orders?status=open&held=false', cashierA)).body.items
+    expect(running.some((item: any) => item.id === order.id)).toBe(false)
+    const parked = (await call('GET', '/orders?status=open&held=true', cashierA)).body.items
+    expect(parked.some((item: any) => item.id === order.id)).toBe(true)
+    const resumed = await call('POST', `/orders/${order.id}/hold`, cashierA, { version: held.body.version, held: false })
+    expect(resumed.body.held_at).toBeNull()
+  })
+  it('refuses a stale hold', async () => {
+    const order = (await open()).body
+    await call('POST', `/orders/${order.id}/hold`, cashierA, { version: order.version, held: true })
+    expect((await call('POST', `/orders/${order.id}/hold`, cashierA, { version: order.version, held: false })).status).toBe(409)
+  })
+})
+
+describe('the orders list', () => {
+  it('finds orders by number, customer and bill number', async () => {
+    const customer = (await call('POST', '/customers', cashierA, { name: 'Findable Person', phone: '9811122233' })).body
+    const added = (await addItem((await open()).body.id)).body
+    const linked = (await call('PATCH', `/orders/${added.id}`, cashierA, { version: added.version, customerId: customer.id })).body
+    const invoice = crypto.randomUUID()
+    await call('POST', `/orders/${linked.id}/finalize`, cashierA, { version: linked.version, invoices: [{ id: invoice }] })
+    const number = (await call('GET', `/invoices/${invoice}`, cashierA)).body.number
+    for (const q of [`#${linked.display_number}`, 'findable', '9811122233', number]) {
+      const found = (await call('GET', `/orders?q=${encodeURIComponent(q)}`, cashierA)).body.items
+      expect(found.some((item: any) => item.id === linked.id)).toBe(true)
+    }
+    const row = (await call('GET', `/orders?q=findable`, cashierA)).body.items.find((item: any) => item.id === linked.id)
+    expect(row.amount).toBe('150.00')
+    expect(row.outstanding).toBe('150.00')
+    expect(row.bill_numbers).toEqual([number])
+  })
+  it('treats search symbols as plain text', async () => {
+    expect((await call('GET', `/orders?q=${encodeURIComponent("%' or 1=1--")}`, cashierA)).body.items).toHaveLength(0)
+  })
+  it('filters by type', async () => {
+    await open(cashierA, { orderType: 'takeaway' })
+    const items = (await call('GET', '/orders?status=open&type=takeaway', cashierA)).body.items
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.every((item: any) => item.order_type === 'takeaway')).toBe(true)
+  })
+  it('counts orders per tab, and never another business', async () => {
+    const counts = (await call('GET', '/orders/counts', cashierA)).body
+    expect(counts.running).toBeGreaterThan(0)
+    expect((await call('GET', '/orders/counts', ownerB)).body).toEqual({ running: 0, held: 0, completed: 0, cancelled: 0 })
+  })
+  it('limits exports to people who can read reports', async () => {
+    expect((await call('GET', '/orders/export?status=open', cashierA)).status).toBe(403)
+    expect((await call('GET', '/orders/export?status=open', ownerA)).body.items.length).toBeGreaterThan(0)
+  })
+  it('shows a timeline, hiding money from the kitchen', async () => {
+    const added = (await addItem((await open()).body.id)).body
+    const done = (await call('POST', `/orders/${added.id}/confirm`, cashierA, { version: added.version })).body
+    await call('POST', `/orders/${done.id}/finalize`, cashierA, { version: done.version, invoices: [{ id: crypto.randomUUID() }] })
+    const cashier = (await call('GET', `/orders/${done.id}/timeline`, cashierA)).body.items.map((item: any) => item.label)
+    expect(cashier[0]).toBe('Order started')
+    expect(cashier).toContain('Order confirmed')
+    expect(cashier.some((label: string) => label.startsWith('Bill '))).toBe(true)
+    const kitchen = (await call('GET', `/orders/${done.id}/timeline`, kitchenA)).body.items.map((item: any) => item.label)
+    expect(kitchen.some((label: string) => label.startsWith('Bill '))).toBe(false)
+  })
+  it('hides another business’s timeline', async () => {
+    const order = (await open()).body
+    expect((await call('GET', `/orders/${order.id}/timeline`, ownerB)).status).toBe(404)
+  })
+})
+
+describe('search, alerts and POS settings', () => {
+  it('searches only within this business and role', async () => {
+    const found = (await call('GET', '/search?q=Dosa', ownerA)).body
+    expect(found.menu[0].name).toBe('Dosa')
+    expect((await call('GET', '/search?q=Dosa', ownerB)).body.menu).toHaveLength(0)
+    const kitchen = (await call('GET', '/search?q=Dosa', kitchenA)).body
+    expect(kitchen.customers).toBeUndefined()
+    expect(kitchen.bills).toBeUndefined()
+  })
+  it('refuses a one-letter search', async () => {
+    expect((await call('GET', '/search?q=a', ownerA)).status).toBe(422)
+  })
+  it('reports live counts, limited by role', async () => {
+    const owner = (await call('GET', '/alerts', ownerA)).body
+    expect(owner.runningOrders).toBeGreaterThan(0)
+    const kitchen = (await call('GET', '/alerts', kitchenA)).body
+    expect(kitchen.unpaidBills).toBe(0)
+    expect(kitchen.paymentsToVerify).toBe(0)
+  })
+  it('gives every role the POS settings, and only owners can change them', async () => {
+    const settings = (await call('GET', '/pos-settings', kitchenA)).body
+    expect(settings.discount_presets).toEqual([5, 10, 15])
+    expect(settings.cashier_discount_limit).toBe('20.00')
+    expect((await call('PATCH', '/business', cashierA, { upiId: 'cafe@okbank' })).status).toBe(403)
+    expect((await call('PATCH', '/business', ownerA, { upiId: 'not a upi id' })).status).toBe(422)
+    expect((await call('PATCH', '/business', ownerA, { fssaiNumber: '123' })).status).toBe(422)
+  })
+  it('copies bill settings onto the bill, so later changes leave it alone', async () => {
+    await call('PATCH', '/business', ownerA, { upiId: 'cafe@okbank', fssaiNumber: '12345678901234', billFooter: 'Thank you', billFormat: 'a4', discountPresets: [10, 20], cashierDiscountLimit: 0 })
+    const saved = (await call('GET', '/pos-settings', cashierA)).body
+    expect(saved).toMatchObject({ upi_id: 'cafe@okbank', bill_format: 'a4', discount_presets: [10, 20], cashier_discount_limit: '0.00' })
+
+    const added = (await addItem((await open()).body.id)).body
+    expect((await call('POST', `/orders/${added.id}/discounts`, cashierA, { id: crypto.randomUUID(), kind: 'percent', value: '5' })).status).toBe(403)
+    const invoice = crypto.randomUUID()
+    await call('POST', `/orders/${added.id}/finalize`, cashierA, { version: added.version, invoices: [{ id: invoice }] })
+
+    await call('PATCH', '/business', ownerA, { upiId: '', fssaiNumber: '', billFooter: 'Changed', billFormat: 'thermal', discountPresets: [5, 10, 15], cashierDiscountLimit: 20 })
+    const bill = (await call('GET', `/invoices/${invoice}`, cashierA)).body
+    expect(bill.seller_snapshot.fssai).toBe('12345678901234')
+    expect(bill.seller_snapshot.footer).toBe('Thank you')
+    expect((await call('GET', '/pos-settings', cashierA)).body.upi_id).toBeNull()
   })
 })
 

@@ -122,3 +122,11 @@ POS and API deployed at isoform-pos-app.vercel.app, website at isoform-pos.verce
 Passed live: session refusal, sign-in through the API, order, tax quote, bill, payment, report, device registration, PIN login, wrong PIN refusal, cashier blocked from reports, and request limits.
 
 Speed from the owner's PC: network 96 ms, adding an item 151 ms typical, issuing a bill 207 ms, recording a payment 425 ms. Occasional requests took 4 to 8 seconds. The cause is unconfirmed; opening new database connections is the likely reason.
+
+## Live check, 31 October 2026, order confirmation
+
+The live check now also covers confirming an order. Passed live through the API: payment methods in the order cash, UPI, card, bank; confirming an order; a new item and a service charge refused afterwards; a discount accepted afterwards; billing a confirmed order; and deleting an empty order with no reason. Everything from the earlier check passed again, and the request limit blocked 3 of 33 requests, as expected at 30 a minute.
+
+Typical speed from the owner's PC: network 154 ms, adding an item 205 ms, issuing a bill 305 ms, recording a payment 310 ms. There were no slow requests in this run.
+
+Clicked through on a local copy as a cashier: colours and symbols, Confirm order, the lock on the order bar, bill preview, Issue bill, and Cash first on the payment form. The Discount button after confirming was not clicked on screen, because cashiers do not have it. It passed through the API.

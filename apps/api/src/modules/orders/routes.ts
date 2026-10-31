@@ -1,14 +1,17 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { audit, command, dbContext, readBody, requires, session, type Actor, type Env } from '../../platform/context.js'
+import { audit, command, dbContext, readBody, requires, requiresAny, session, type Actor, type Env } from '../../platform/context.js'
 import { tx, type Db } from '../../platform/db.js'
 import { AppError, forbidden, notFound } from '../../platform/errors.js'
 import { can } from '../../platform/permissions.js'
+import { assertDiscountLimit } from './discount-limit.js'
 
 export const orders = new Hono<Env>()
 orders.use(session)
 
 const version = z.number().int().positive()
+const guests = z.number().int().min(1).max(200)
+const address = z.string().trim().max(300)
 const quantity = z.string().regex(/^\d{1,8}(\.\d{1,3})?$/).refine((value) => Number(value) > 0, 'Quantity must be above zero.')
 const amount = z.string().regex(/^\d{1,12}(\.\d{1,2})?$/)
 const reason = z.string().trim().min(2).max(300)
@@ -20,6 +23,8 @@ const newOrder = z.strictObject({
   aggregator: z.string().trim().min(2).max(40).optional(),
   aggregatorReference: z.string().trim().max(60).optional(),
   tableLabel: z.string().trim().max(30).optional(),
+  guestCount: guests.optional(),
+  deliveryAddress: address.optional(),
   notes: z.string().trim().max(300).optional(),
 }).refine((value) => (value.orderType === 'aggregator') === Boolean(value.aggregator), {
   message: 'Choose the delivery app for this order.',
@@ -27,10 +32,17 @@ const newOrder = z.strictObject({
 
 const orderUpdate = z.strictObject({
   version,
+  orderType: z.enum(['dine_in', 'takeaway', 'delivery', 'aggregator']).optional(),
+  aggregator: z.string().trim().min(2).max(40).optional(),
+  aggregatorReference: z.string().trim().max(60).optional(),
   tableLabel: z.string().trim().max(30).optional(),
+  guestCount: guests.nullable().optional(),
+  deliveryAddress: address.optional(),
   notes: z.string().trim().max(300).optional(),
   serviceChargePercent: amount.refine((value) => Number(value) <= 100).optional(),
-  customerId: z.uuid().optional(),
+  customerId: z.uuid().nullable().optional(),
+}).refine((value) => value.orderType !== 'aggregator' || Boolean(value.aggregator), {
+  message: 'Choose the delivery app for this order.',
 })
 
 // Prices are never accepted here. They always come from the menu, and strict parsing rejects them.
@@ -45,11 +57,12 @@ const itemUpdate = z.strictObject({ version, quantity: quantity.optional(), note
 const voidItem = z.strictObject({ version, reason })
 const cancelOrder = z.strictObject({ version, reason: reason.optional() })
 const confirmOrder = z.strictObject({ version })
+const holdOrder = z.strictObject({ version, held: z.boolean() })
 const newDiscount = z.strictObject({
   id: z.uuid(),
   kind: z.enum(['percent', 'amount']),
   value: amount.refine((value) => Number(value) > 0),
-  reason,
+  reason: reason.optional(),
 }).refine((value) => value.kind !== 'percent' || Number(value.value) <= 100, { message: 'A percentage cannot exceed 100.' })
 
 function workingBranch(actor: Actor) {
@@ -61,7 +74,8 @@ async function loadOrder(db: Db, id: string) {
   const { rows: [order] } = await db.query(
     `select o.id, o.branch_id, o.display_number, o.order_type, o.aggregator, o.aggregator_reference, o.table_label, o.status,
             o.service_charge_percent::text, o.business_date::text, o.notes, o.version, o.created_at, o.cancel_reason, o.confirmed_at,
-            o.customer_id, c.name as customer_name
+            o.held_at, o.guest_count, o.delivery_address,
+            o.customer_id, c.name as customer_name, c.phone as customer_phone
        from app.orders o left join app.customers c on c.id = o.customer_id where o.id = $1`,
     [id],
   )
@@ -111,27 +125,136 @@ async function touch(db: Db, id: string, expected?: number) {
   throw new AppError(409, 'stale_order', 'This order was changed on another screen. It has been refreshed.', { order: current })
 }
 
+const listFilters = z.object({
+  status: z.enum(['open', 'finalized', 'cancelled', 'all']).optional(),
+  held: z.enum(['true', 'false']).optional(),
+  type: z.enum(['dine_in', 'takeaway', 'delivery', 'aggregator']).optional(),
+  q: z.string().trim().max(60).optional(),
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+  before: z.iso.datetime({ offset: true }).optional(),
+})
+type ListFilters = z.infer<typeof listFilters>
+
+async function listOrders(db: Db, actor: Actor, filters: ListFilters, limit: number) {
+  const status = filters.status === 'all' ? null : filters.status ?? null
+  const search = filters.q ? `%${filters.q.replace(/[%_\\]/g, '\\$&')}%` : null
+  const number = filters.q && /^#?\d{1,9}$/.test(filters.q) ? Number(filters.q.replace('#', '')) : null
+  const { rows } = await db.query(
+    `select o.id, o.display_number, o.order_type, o.aggregator, o.table_label, o.status, o.version, o.created_at, o.branch_id,
+            o.confirmed_at, o.held_at, o.guest_count, o.business_date::text, o.cancel_reason,
+            c.name as customer_name, c.phone as customer_phone,
+            line.item_count, coalesce(bill.total, line.subtotal)::numeric(14,2)::text as amount,
+            bill.outstanding::text, bill.paid::text, bill.numbers as bill_numbers
+       from app.orders o
+       left join app.customers c on c.id = o.customer_id
+       left join lateral (
+         select count(*)::int as item_count, coalesce(sum(round((i.unit_price + coalesce(a.extra, 0)) * i.quantity, 2)), 0) as subtotal
+           from app.order_items i
+           left join lateral (select sum(unit_price * quantity) extra from app.order_item_addons where order_item_id = i.id) a on true
+          where i.order_id = o.id and i.status = 'active'
+       ) line on true
+       left join lateral (
+         select sum(n.grand_total) as total, sum(b.outstanding) as outstanding, sum(b.allocated) as paid, array_agg(n.number) as numbers
+           from app.invoices n join app.invoice_balances b on b.invoice_id = n.id where n.order_id = o.id
+       ) bill on o.status = 'finalized'
+      where o.branch_id = any($1::uuid[])
+        and ($2::text is null or o.status = $2)
+        and ($3::boolean is null or (o.held_at is not null) = $3)
+        and ($4::text is null or o.order_type = $4)
+        and ($5::date is null or o.business_date >= $5)
+        and ($6::date is null or o.business_date <= $6)
+        and ($7::timestamptz is null or o.created_at < $7)
+        and ($8::text is null or o.display_number = $9::int or c.name ilike $8 or c.phone like $8 or o.table_label ilike $8
+             or exists (select 1 from app.invoices n where n.order_id = o.id and n.number ilike $8))
+      order by o.created_at desc limit $10`,
+    [actor.branchIds, status, filters.held ? filters.held === 'true' : null, filters.type ?? null,
+      filters.from ?? null, filters.to ?? null, filters.before ?? null, search, number, limit],
+  )
+  return rows
+}
+
 orders.get('/orders', requires('orders.read'), async (c) => {
   const actor = c.get('actor')
-  const status = z.enum(['open', 'finalized', 'cancelled']).default('open').parse(c.req.query('status'))
-  const before = z.iso.datetime({ offset: true }).optional().parse(c.req.query('before'))
-  const items = await tx(dbContext(actor), async (db) => {
-    const { rows } = await db.query(
-      `select o.id, o.display_number, o.order_type, o.table_label, o.status, o.version, o.created_at, o.branch_id, o.confirmed_at,
-              (select count(*)::int from app.order_items i where i.order_id = o.id and i.status = 'active') as item_count
-         from app.orders o
-        where o.status = $1 and o.branch_id = any($2::uuid[]) and ($3::timestamptz is null or o.created_at < $3)
-        order by o.created_at desc limit 50`,
-      [status, actor.branchIds, before ?? null],
-    )
-    return rows
-  })
+  const filters = listFilters.parse(c.req.query())
+  const items = await tx(dbContext(actor), (db) => listOrders(db, actor, { ...filters, status: filters.status ?? (filters.q ? undefined : 'open') }, 50))
   return c.json({ items, nextBefore: items.length === 50 ? items[49].created_at : null })
+})
+
+orders.get('/orders/counts', requires('orders.read'), async (c) => {
+  const actor = c.get('actor')
+  const counts = await tx(dbContext(actor), async (db) => {
+    const { rows: [row] } = await db.query(
+      `select count(*) filter (where status = 'open' and held_at is null)::int as running,
+              count(*) filter (where status = 'open' and held_at is not null)::int as held,
+              count(*) filter (where status = 'finalized')::int as completed,
+              count(*) filter (where status = 'cancelled')::int as cancelled
+         from app.orders where branch_id = any($1::uuid[])`,
+      [actor.branchIds],
+    )
+    return row
+  })
+  return c.json(counts)
+})
+
+orders.get('/orders/export', requires('reports.read'), async (c) => {
+  const actor = c.get('actor')
+  const filters = listFilters.parse(c.req.query())
+  const items = await tx(dbContext(actor), (db) => listOrders(db, actor, filters, 5000))
+  return c.json({ items })
 })
 
 orders.get('/orders/:id', requires('orders.read'), async (c) => {
   const id = uuidParam(c.req.param('id'))
   return c.json(await tx(dbContext(c.get('actor')), (db) => loadOrder(db, id)))
+})
+
+orders.get('/orders/:id/timeline', requires('orders.read'), async (c) => {
+  const id = uuidParam(c.req.param('id'))
+  const actor = c.get('actor')
+  const events = await tx(dbContext(actor), async (db) => {
+    const { rows: [order] } = await db.query(
+      `select o.created_at, o.confirmed_at, o.held_at, o.cancel_reason, by_c.display_name as created_by, by_k.display_name as confirmed_by
+         from app.orders o
+         join app.memberships by_c on by_c.id = o.created_by
+         left join app.memberships by_k on by_k.id = o.confirmed_by
+        where o.id = $1`,
+      [id],
+    )
+    if (!order) throw notFound('Order')
+    const timeline = [{ at: order.created_at, label: 'Order started', by: order.created_by }]
+    if (order.confirmed_at) timeline.push({ at: order.confirmed_at, label: 'Order confirmed', by: order.confirmed_by })
+    if (order.held_at) timeline.push({ at: order.held_at, label: 'Put on hold', by: null })
+    const { rows: changes } = await db.query(
+      `select h.changed_at, m.display_name from app.order_status_history h
+         left join app.memberships m on m.id = h.changed_by where h.order_id = $1 and h.to_status = 'cancelled'`,
+      [id],
+    )
+    for (const change of changes) timeline.push({ at: change.changed_at, label: `Cancelled: ${order.cancel_reason}`, by: change.display_name })
+    if (can(actor.role, 'billing.read')) {
+      const { rows: bills } = await db.query(
+        `select n.number, n.grand_total::text, n.issued_at, m.display_name from app.invoices n
+           join app.memberships m on m.id = n.issued_by where n.order_id = $1`,
+        [id],
+      )
+      for (const bill of bills) timeline.push({ at: bill.issued_at, label: `Bill ${bill.number} issued for ₹${bill.grand_total}`, by: bill.display_name })
+    }
+    if (can(actor.role, 'payments.read')) {
+      const { rows: paid } = await db.query(
+        `select distinct on (p.id) p.received_at, p.amount::text, k.name as method, m.display_name
+           from app.payments p
+           join app.payment_allocations a on a.payment_id = p.id
+           join app.invoices n on n.id = a.invoice_id
+           join app.payment_methods k on k.id = p.method_id
+           join app.memberships m on m.id = p.recorded_by
+          where n.order_id = $1 and p.status in ('recorded', 'confirmed')`,
+        [id],
+      )
+      for (const payment of paid) timeline.push({ at: payment.received_at, label: `${payment.method} payment of ₹${payment.amount}`, by: payment.display_name })
+    }
+    return timeline.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+  })
+  return c.json({ items: events })
 })
 
 orders.post('/orders', requires('orders.write'), async (c) => {
@@ -150,10 +273,10 @@ orders.post('/orders', requires('orders.write'), async (c) => {
     )
     await db.query(
       `insert into app.orders (id, tenant_id, branch_id, display_number, order_type, aggregator, aggregator_reference,
-         table_label, notes, business_date, created_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         table_label, notes, business_date, created_by, guest_count, delivery_address)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [input.id, actor.tenantId, branchId, next, input.orderType, input.aggregator, input.aggregatorReference,
-        input.tableLabel, input.notes, business_date, actor.membershipId],
+        input.tableLabel, input.notes, business_date, actor.membershipId, input.guestCount, input.deliveryAddress],
     )
     return loadOrder(db, input.id)
   })
@@ -167,9 +290,15 @@ orders.patch('/orders/:id', requires('orders.write'), async (c) => {
       `update app.orders set
          table_label = coalesce($3, table_label), notes = coalesce($4, notes),
          service_charge_percent = coalesce($5, service_charge_percent),
-         customer_id = coalesce($6, customer_id)
+         customer_id = case when $7 then $6::uuid else customer_id end,
+         order_type = coalesce($8, order_type),
+         aggregator = case when $8::text is null then aggregator when $8 = 'aggregator' then $9 end,
+         aggregator_reference = case when $8::text is null then aggregator_reference when $8 = 'aggregator' then $10 end,
+         guest_count = case when $11 then $12::int else guest_count end,
+         delivery_address = coalesce($13, delivery_address)
        where id = $1 and version = $2`,
-      [id, input.version, input.tableLabel, input.notes, input.serviceChargePercent, input.customerId],
+      [id, input.version, input.tableLabel, input.notes, input.serviceChargePercent, input.customerId ?? null, input.customerId !== undefined,
+        input.orderType, input.aggregator, input.aggregatorReference, input.guestCount !== undefined, input.guestCount ?? null, input.deliveryAddress],
     )
     if (!rowCount) await touch(db, id, input.version)
     if (input.serviceChargePercent !== undefined) {
@@ -262,7 +391,7 @@ orders.post('/orders/:id/items/:itemId/void', requires('orders.write'), async (c
   })
 })
 
-orders.post('/orders/:id/discounts', requires('orders.discount'), async (c) => {
+orders.post('/orders/:id/discounts', requiresAny('orders.discount', 'orders.discount_limited'), async (c) => {
   const orderId = uuidParam(c.req.param('id'))
   const input = await readBody(c, newDiscount)
   return command(c, 201, async (db, actor) => {
@@ -272,16 +401,17 @@ orders.post('/orders/:id/discounts', requires('orders.discount'), async (c) => {
     await db.query(
       `insert into app.order_discounts (id, tenant_id, branch_id, order_id, kind, value, reason, approved_by)
        values ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [input.id, actor.tenantId, order.branch_id, orderId, input.kind, input.value, input.reason, actor.membershipId],
+      [input.id, actor.tenantId, order.branch_id, orderId, input.kind, input.value, input.reason ?? 'No reason given', actor.membershipId],
     )
     const updated = await loadOrder(db, orderId)
     if (Number(updated.after_discount) < 0) throw new AppError(409, 'discount_too_large', 'The discount is more than the order total.')
+    await assertDiscountLimit(db, actor.tenantId, orderId)
     await audit(db, actor, 'order.discount_added', 'order', orderId, input)
     return updated
   })
 })
 
-orders.delete('/orders/:id/discounts/:discountId', requires('orders.discount'), async (c) => {
+orders.delete('/orders/:id/discounts/:discountId', requiresAny('orders.discount', 'orders.discount_limited'), async (c) => {
   const orderId = uuidParam(c.req.param('id'))
   const discountId = uuidParam(c.req.param('discountId'))
   return command(c, 200, async (db, actor) => {
@@ -311,6 +441,21 @@ orders.post('/orders/:id/cancel', requires('orders.write'), async (c) => {
     )
     if (!rowCount) await touch(db, id, input.version)
     await audit(db, actor, 'order.cancelled', 'order', id, { reason: cancelReason, activeItems: active })
+    return loadOrder(db, id)
+  })
+})
+
+/** Parks an order so it leaves the running list. It can be picked up again at any time. */
+orders.post('/orders/:id/hold', requires('orders.write'), async (c) => {
+  const id = uuidParam(c.req.param('id'))
+  const input = await readBody(c, holdOrder)
+  return command(c, 200, async (db, actor) => {
+    const { rowCount } = await db.query(
+      `update app.orders set held_at = case when $3 then now() end where id = $1 and version = $2`,
+      [id, input.version, input.held],
+    )
+    if (!rowCount) await touch(db, id, input.version)
+    await audit(db, actor, input.held ? 'order.held' : 'order.resumed', 'order', id)
     return loadOrder(db, id)
   })
 })

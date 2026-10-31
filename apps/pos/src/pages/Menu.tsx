@@ -147,8 +147,8 @@ export function Menu({ me }: { me: Me }) {
           if (items.length === 0) return null
           return (
             <section key={category.id} className="mb-6">
-              <h2 className="mb-2 text-xl">{category.name}</h2>
-              <ul className="card divide-y divide-line">
+              <h2 className="mb-2 text-lg">{category.name}</h2>
+              <ul className="card divide-y divide-line-soft overflow-hidden">
                 {items.map((product: any) => (
                   <li key={product.id} className="p-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -191,7 +191,7 @@ export function Menu({ me }: { me: Me }) {
                           <span className="text-ink-soft">{variant.name}</span>
                           <span className="flex items-center gap-2">
                             {variant.hasBranchPrice && <span className="text-xs text-brand-deep">Branch price</span>}
-                            <span className="font-mono">₹{variant.price}</span>
+                            <span className="tnum font-medium">₹{variant.price}</span>
                             {canWrite && <button className="btn !min-h-9 text-sm underline" onClick={() => editPrice(variant)}>Price</button>}
                             {canWrite && branch && variant.hasBranchPrice && (
                               <button
